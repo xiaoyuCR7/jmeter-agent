@@ -25,7 +25,7 @@ AI 驱动的 JMeter 性能测试平台 —— 支持多 AI 模型、自动生成
 
 ## 项目概述
 
-JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 Apache JMeter 构建（仓库内置 JMeter 运行时，无需单独安装）。平台通过 AI 技术自动生成测试计划、智能分析测试结果，并提供自然语言交互、MCP 协议集成等能力，旨在大幅简化性能测试流程。
+JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 Apache JMeter 5.6.3 构建。JMeter 运行时**不包含在仓库内**，执行真实压测前需自行准备（安装方式见[安装指南](#安装指南)）。平台通过 AI 技术自动生成测试计划、智能分析测试结果，并提供自然语言交互、MCP 协议集成等能力，旨在大幅简化性能测试流程。
 
 ### 核心价值
 
@@ -107,7 +107,7 @@ JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 
 | 向量检索 | LanceDB（RAG 知识库） |
 | 认证 | JWT (PyJWT) + bcrypt (passlib) |
 | 前端 | Vue 3 / TypeScript / Vite 6 / Element Plus / Pinia / Vue Router / ECharts 6 |
-| 测试引擎 | Apache JMeter（内置 `bin/` + `lib/`） |
+| 测试引擎 | Apache JMeter 5.6.3（需自行安装，见[安装指南](#安装指南)） |
 | 测试 | pytest（后端） / Vitest（前端） |
 
 ---
@@ -116,12 +116,6 @@ JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 
 
 ```
 jmeter-agent/
-├── bin/                          # JMeter 二进制文件和配置
-│   ├── jmeter.bat / jmeter.sh    # JMeter 启动脚本
-│   ├── jmeter.properties         # JMeter 配置文件
-│   └── report-template/          # 报告模板
-├── lib/                          # JMeter 依赖库
-│   └── ext/                      # JMeter 插件扩展
 ├── jmeter-agent-backend/         # 后端服务 (Python / FastAPI)
 │   ├── app/
 │   │   ├── main.py               # 应用入口
@@ -182,16 +176,16 @@ jmeter-agent/
 │   ├── tests/                    # 前端测试 (Vitest)
 │   ├── vite.config.ts            # Vite 配置（含后端代理）
 │   └── package.json              # 前端依赖
-├── docs/                         # 文档与截图
-├── backups/                      # 测试计划备份
-├── rag_lancedb/                  # RAG 向量数据库
-├── test_data/                    # 测试数据目录
-├── extras/ printable_docs/ licenses/  # JMeter 附属目录
+├── docs/                         # 项目文档（修复记录等）
 ├── gitlab-ci-example.yml         # GitLab CI 集成示例
 ├── reqres-openapi.yaml           # OpenAPI 导入示例
 ├── start.bat / start.sh          # 一键启动脚本
 └── LICENSE                       # Apache 2.0 许可证
 ```
+
+> **不包含在仓库中的目录**（由 `.gitignore` 排除）：
+> - `bin/`、`lib/` —— Apache JMeter 5.6.3 运行时，需按[安装指南](#安装指南)自行准备
+> - `backups/`、`rag_lancedb/`、`jmeter-agent-backend/test_plans/`、`jmeter-agent-backend/reports/` —— 运行时自动生成的备份、向量库与测试产物
 
 ---
 
@@ -201,11 +195,47 @@ jmeter-agent/
 
 - **Python**: 3.11+
 - **Node.js**: 20+
-- **Java**: 11+（JMeter 运行依赖）
+- **Java**: 11+（JMeter 运行依赖，使用 `java -version` 验证）
+- **Apache JMeter**: 5.6.3（仓库**不内置**，按下述步骤安装；仅运行单元测试时不需要）
+
+### 准备 JMeter 运行时
+
+从 [Apache JMeter 下载页](https://jmeter.apache.org/download_jmeter.cgi) 下载 `apache-jmeter-5.6.3` 压缩包，任选一种方式让后端能定位到它：
+
+**方式 A：解压到项目根目录（零配置，推荐）**
+
+将压缩包内的 `bin/` 和 `lib/` 解压到本项目根目录（与 `jmeter-agent-backend/` 同级），最终结构为：
+
+```
+jmeter-agent/
+├── bin/jmeter.bat          # Windows；Linux/macOS 为 bin/jmeter
+├── lib/
+└── jmeter-agent-backend/
+```
+
+**方式 B：设置 `JMETER_HOME` 环境变量**
+
+指向 JMeter 的 `bin` 目录（指向 JMeter 安装根目录也可识别）：
+
+```bash
+# Windows（永久生效）
+setx JMETER_HOME "C:\apache-jmeter-5.6.3\bin"
+
+# Linux / macOS（写入 ~/.bashrc 或 ~/.zshrc）
+export JMETER_HOME=/opt/apache-jmeter-5.6.3/bin
+```
+
+**方式 C：加入系统 `PATH`**
+
+将 `apache-jmeter-5.6.3/bin` 加入 `PATH`，执行器会自动发现 `jmeter` / `jmeter.bat`。
+
+> 安装后可用 `jmeter --version` 验证。仅查看/编辑测试计划、运行前后端单元测试不需要 JMeter；执行真实压测和生成 HTML 报告时必须安装。
 
 ### 快速开始
 
 #### 方式一：一键启动脚本（推荐）
+
+> 前置条件：已完成上述 [JMeter 运行时准备](#准备-jmeter-运行时)，且 Java 11+ 可用。
 
 ```bash
 # Windows
@@ -219,21 +249,25 @@ start.bat
 
 #### 方式二：手动安装
 
-**1. 安装后端依赖**
+**1. 准备 JMeter 运行时**
+
+按上文 [准备 JMeter 运行时](#准备-jmeter-运行时) 完成安装。
+
+**2. 安装后端依赖**
 
 ```bash
 cd jmeter-agent-backend
 pip install -r requirements.txt
 ```
 
-**2. 安装前端依赖**
+**3. 安装前端依赖**
 
 ```bash
 cd jmeter-agent-frontend
 npm install
 ```
 
-**3. 配置环境变量**
+**4. 配置环境变量**
 
 ```bash
 cd jmeter-agent-backend
@@ -257,7 +291,7 @@ JWT_SECRET=your-secure-jwt-secret
 DEFAULT_ADMIN_PASSWORD=your-admin-password
 ```
 
-**4. 启动服务**
+**5. 启动服务**
 
 ```bash
 # 后端（端口 8000）
@@ -347,6 +381,7 @@ npm run dev
 | `QWEN_API_KEY` / `QWEN_API_BASE` / `QWEN_MODEL` | 通义千问配置 | - / 阿里云兼容地址 / `qwen-max` |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_API_BASE` / `DEEPSEEK_MODEL` | DeepSeek 配置 | - / 官方地址 / `deepseek-chat` |
 | `DEFAULT_AI_MODEL` | 默认 AI 模型 | `openai` |
+| `JMETER_HOME` | JMeter 可执行文件目录（指向 `bin` 或 JMeter 安装根目录均可） | `<项目根>/bin` |
 | `JMETER_TIMEOUT` | 单次测试超时（秒） | `3600` |
 | `RESOURCE_CPU_THRESHOLD` | CPU 使用率阈值（%） | `80` |
 | `RESOURCE_MEMORY_THRESHOLD` | 内存使用率阈值（%） | `85` |
@@ -544,8 +579,10 @@ npm run preview   # 本地预览构建产物
 
 **解决**：
 - 确保已安装 Java 11+（`java -version` 验证）
-- 检查仓库 `bin/` 目录下是否存在 `jmeter.bat` / `jmeter.sh`
-- 或设置环境变量 `JMETER_HOME` 指向 JMeter 安装目录
+- 确认已安装 Apache JMeter 5.6.3（见[准备 JMeter 运行时](#准备-jmeter-运行时)），后端按以下顺序定位，满足任一即可：
+  - 项目根目录下存在 `bin/jmeter.bat`（Windows）或 `bin/jmeter`（Linux/macOS）
+  - 环境变量 `JMETER_HOME` 指向 JMeter 的 `bin` 目录（指向其安装根目录也可）
+  - JMeter 的 `bin` 目录已加入系统 `PATH`（可先用 `jmeter --version` 验证）
 
 ### 2. AI 模型连接失败
 

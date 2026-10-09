@@ -4,7 +4,7 @@ AI-Powered JMeter Performance Testing Platform - Supports multiple AI models, au
 
 ## Project Overview
 
-JMeter Agent is an AI-integrated performance testing platform built on Apache JMeter. The platform aims to simplify the performance testing workflow by leveraging AI technologies to automatically generate test plans, intelligently analyze test results, and provide natural language interaction capabilities.
+JMeter Agent is an AI-integrated performance testing platform built on Apache JMeter 5.6.3. The JMeter runtime is **not bundled in this repository** — you need to install it separately (see [Installation Guide](#installation-guide)) before running real load tests. The platform aims to simplify the performance testing workflow by leveraging AI technologies to automatically generate test plans, intelligently analyze test results, and provide natural language interaction capabilities.
 
 ### Core Value
 
@@ -64,13 +64,6 @@ JMeter Agent is an AI-integrated performance testing platform built on Apache JM
 
 ```
 jmeter-agent/
-├── bin/                          # JMeter binaries and configuration
-│   ├── jmeter.bat / jmeter.sh    # JMeter startup scripts
-│   ├── jmeter.properties         # JMeter configuration file
-│   └── report-template/          # Report templates
-├── lib/                          # JMeter dependencies
-│   ├── ext/                      # JMeter plugin extensions
-│   └── *.jar                     # Third-party dependencies
 ├── jmeter-agent-backend/         # Backend service (Python/FastAPI)
 │   ├── app/
 │   │   ├── api/                  # API routes
@@ -92,11 +85,14 @@ jmeter-agent/
 │   │   ├── utils/                # Utility functions
 │   │   └── views/                # Page components
 │   └── package.json              # Frontend dependencies
-├── backups/                      # Test plan backups
-├── rag_lancedb/                  # RAG vector database
+├── docs/                         # Project documentation
 ├── start.bat / start.sh          # One-click startup scripts
 └── LICENSE                       # License
 ```
+
+> **Directories not included in the repository** (excluded via `.gitignore`):
+> - `bin/`, `lib/` — Apache JMeter 5.6.3 runtime; install it yourself following the [Installation Guide](#installation-guide)
+> - `backups/`, `rag_lancedb/`, `jmeter-agent-backend/test_plans/`, `jmeter-agent-backend/reports/` — runtime-generated backups, vector store, and test artifacts
 
 ---
 
@@ -106,11 +102,47 @@ jmeter-agent/
 
 - **Python**: 3.11+
 - **Node.js**: 20+
-- **Java**: 11+ (required for JMeter)
+- **Java**: 11+ (required by JMeter; verify with `java -version`)
+- **Apache JMeter**: 5.6.3 (**not bundled**; install as described below; not required for running unit tests)
+
+### Prepare the JMeter Runtime
+
+Download `apache-jmeter-5.6.3` from the [Apache JMeter downloads page](https://jmeter.apache.org/download_jmeter.cgi), then make it discoverable by the backend in one of these ways:
+
+**Option A: Extract into the project root (zero configuration, recommended)**
+
+Extract the `bin/` and `lib/` folders from the archive into the project root (alongside `jmeter-agent-backend/`):
+
+```
+jmeter-agent/
+├── bin/jmeter.bat          # Windows; bin/jmeter on Linux/macOS
+├── lib/
+└── jmeter-agent-backend/
+```
+
+**Option B: Set the `JMETER_HOME` environment variable**
+
+Point it to JMeter's `bin` directory (pointing to the JMeter installation root also works):
+
+```bash
+# Windows (persistent)
+setx JMETER_HOME "C:\apache-jmeter-5.6.3\bin"
+
+# Linux / macOS (add to ~/.bashrc or ~/.zshrc)
+export JMETER_HOME=/opt/apache-jmeter-5.6.3/bin
+```
+
+**Option C: Add it to your system `PATH`**
+
+Add `apache-jmeter-5.6.3/bin` to `PATH`; the executor will discover `jmeter` / `jmeter.bat` automatically.
+
+> Verify with `jmeter --version`. JMeter is only needed for executing real load tests and generating HTML reports — viewing/editing test plans and running the unit test suites do not require it.
 
 ### Quick Start
 
 #### Method 1: Use One-click Startup Script (Recommended)
+
+> Prerequisite: complete [Prepare the JMeter Runtime](#prepare-the-jmeter-runtime) above and ensure Java 11+ is available.
 
 ```bash
 # Windows
@@ -122,21 +154,25 @@ start.bat
 
 #### Method 2: Manual Installation
 
-**1. Install Backend Dependencies**
+**1. Prepare the JMeter Runtime**
+
+Follow [Prepare the JMeter Runtime](#prepare-the-jmeter-runtime) above.
+
+**2. Install Backend Dependencies**
 
 ```bash
 cd jmeter-agent-backend
 pip install -r requirements.txt
 ```
 
-**2. Install Frontend Dependencies**
+**3. Install Frontend Dependencies**
 
 ```bash
 cd jmeter-agent-frontend
 npm install
 ```
 
-**3. Configure Environment Variables**
+**4. Configure Environment Variables**
 
 Copy `.env.example` to `.env` and configure:
 
@@ -163,7 +199,7 @@ JWT_SECRET=your-secure-jwt-secret
 DEFAULT_ADMIN_PASSWORD=your-admin-password
 ```
 
-**4. Start Services**
+**5. Start Services**
 
 ```bash
 # Start backend (port 8000)
@@ -242,6 +278,7 @@ npm run dev
 | `OPENAI_API_KEY` | OpenAI API key | - |
 | `ANTHROPIC_API_KEY` | Anthropic API key | - |
 | `QWEN_API_KEY` | Qwen API key | - |
+| `JMETER_HOME` | Directory containing the JMeter executable (its `bin` dir or the JMeter install root) | `<project-root>/bin` |
 | `MEMORY_PERSIST_ENABLED` | Conversation memory persistence | true |
 | `RATE_LIMIT_ENABLED` | API rate limiting | true |
 | `RESOURCE_CPU_THRESHOLD` | CPU usage threshold (%) | 80 |
@@ -330,9 +367,11 @@ npm run test
 **Symptom**: Startup error `JMeter executable not found`
 
 **Solution**:
-- Ensure Java 11+ is installed
-- Check if `jmeter.bat` or `jmeter.sh` exists in `bin/` directory
-- Or set `JMETER_HOME` environment variable to JMeter installation directory
+- Ensure Java 11+ is installed (`java -version`)
+- Make sure Apache JMeter 5.6.3 is installed (see [Prepare the JMeter Runtime](#prepare-the-jmeter-runtime)). The backend locates it via any one of:
+  - `bin/jmeter.bat` (Windows) or `bin/jmeter` (Linux/macOS) exists in the project root
+  - `JMETER_HOME` points to JMeter's `bin` directory (or its installation root)
+  - JMeter's `bin` directory is on your system `PATH` (verify with `jmeter --version`)
 
 #### 2. AI Model Connection Failed
 
