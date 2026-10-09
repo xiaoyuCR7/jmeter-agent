@@ -6,15 +6,6 @@ AI-Powered JMeter Performance Testing Platform - Supports multiple AI models, au
 
 JMeter Agent is an AI-integrated performance testing platform built on Apache JMeter 5.6.3. The JMeter runtime is **not bundled in this repository** — you need to install it separately (see [Installation Guide](#installation-guide)) before running real load tests. The platform aims to simplify the performance testing workflow by leveraging AI technologies to automatically generate test plans, intelligently analyze test results, and provide natural language interaction capabilities.
 
-### Core Value
-
-- **AI Automation Testing**: Automatically generate JMeter test plans through natural language descriptions or API documents
-- **Intelligent Report Analysis**: AI-driven test report analysis to automatically identify performance bottlenecks and issues
-- **Multi-model Support**: Supports OpenAI, Claude, Qwen, DeepSeek, and other AI models
-- **Project Management**: Multi-project, multi-environment test resource management
-- **Real-time Monitoring**: WebSocket-based real-time test execution progress monitoring
-- **Internationalization**: Support for Chinese/English interface switching
-
 ---
 
 ## Features
@@ -51,6 +42,7 @@ JMeter Agent is an AI-integrated performance testing platform built on Apache JM
 - Multi-project support
 - Multi-environment configuration (development, testing, production)
 - Environment variables and header management
+- Chinese/English interface switching
 
 ### Scheduling & Baselines
 
@@ -428,74 +420,6 @@ view reports/{execution_id}/jmeter.log
 
 ---
 
-## Analysis of Potential Redundant/Obsolete Files
-
-The following files may be redundant, temporary, or test artifacts. Consider cleaning them:
-
-### 1. Compilation Cache Files
-
-| File/Directory | Type | Description |
-|----------------|------|-------------|
-| `**/__pycache__/` | Compilation cache | Python compiled `.pyc` files, auto-generated at runtime, not needed for version control |
-| `jmeter-agent-backend/.pytest_cache/` | Test cache | pytest test cache, can be safely deleted |
-
-### 2. Log Files
-
-| File | Description |
-|------|-------------|
-| `.codegraph/daemon.log` | CodeGraph tool log |
-| `jmeter-agent-backend/server_stdout.log` | Backend service log |
-| `jmeter-agent-backend/server_stderr.log` | Backend error log |
-| `jmeter-agent-backend/reports/**/jmeter.log` | JMeter execution logs (keep only recent test records) |
-| `jmeter.log` | JMeter log at root directory |
-| `bin/jmeter.log` | JMeter sample log |
-
-### 3. Temporary Test Files
-
-| File | Description |
-|------|-------------|
-| `jmeter-agent-backend/test_exec_id.txt` | Temporary test execution ID file |
-| `jmeter-agent-backend/test_plan_id.txt` | Temporary test plan ID file |
-| `jmeter-agent-backend/test_project_id.txt` | Temporary project ID file |
-
-### 4. Development Tool Configurations
-
-| File/Directory | Description |
-|----------------|-------------|
-| `.claude/` | Claude IDE configuration |
-| `.codegraph/` | CodeGraph tool configuration and database |
-| `.impeccable/` | Impeccable code quality tool configuration |
-
-### 5. Backup Files
-
-| Directory | Description |
-|-----------|-------------|
-| `backups/` | Test plan backups (historical backups can be cleaned as needed) |
-
-### 6. RAG Database Files
-
-| Directory | Description |
-|-----------|-------------|
-| `rag_lancedb/` | LanceDB vector database (required in production, can be cleaned in development) |
-
-### 7. Dependency Files
-
-| File | Description |
-|------|-------------|
-| `jmeter-agent-backend/requirements.in` | Human-maintained direct runtime dependencies |
-| `jmeter-agent-backend/requirements.txt` | Generated exact runtime dependency lock |
-| `jmeter-agent-backend/requirements-dev.in` | Human-maintained development and test tools |
-| `jmeter-agent-backend/requirements-dev.txt` | Generated exact development dependency lock |
-
-### Recommended Actions
-
-1. **Add `.gitignore`**: Ensure the above files are not tracked by version control
-2. **Clean Cache**: Periodically clean `__pycache__` and `.pytest_cache`
-3. **Log Management**: Set up log rotation policy to avoid oversized log files
-4. **Backup Strategy**: Periodically clean expired backup files
-
----
-
 ## License
 
 [Apache License 2.0](LICENSE)
@@ -504,7 +428,4 @@ The following files may be redundant, temporary, or test artifacts. Consider cle
 
 ## Contact
 
-For questions or suggestions, please contact us through:
-
-- Submit an Issue
-- Send an email
+For questions or suggestions, please open an Issue.

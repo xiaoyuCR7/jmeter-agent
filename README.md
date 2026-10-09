@@ -27,16 +27,6 @@ AI 驱动的 JMeter 性能测试平台 —— 支持多 AI 模型、自动生成
 
 JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 Apache JMeter 5.6.3 构建。JMeter 运行时**不包含在仓库内**，执行真实压测前需自行准备（安装方式见[安装指南](#安装指南)）。平台通过 AI 技术自动生成测试计划、智能分析测试结果，并提供自然语言交互、MCP 协议集成等能力，旨在大幅简化性能测试流程。
 
-### 核心价值
-
-- **AI 自动化测试**：通过自然语言描述或 API 文档自动生成 JMeter 测试计划
-- **智能报告分析**：AI 驱动的测试报告分析，自动识别性能瓶颈和问题
-- **多模型支持**：支持 OpenAI、Claude、通义千问、DeepSeek 及任意 OpenAI 兼容接口的模型
-- **项目管理**：支持多项目、多环境的测试资源管理
-- **实时监控**：WebSocket 实时监控测试执行进度
-- **MCP 集成**：内置 MCP Server，可被 Trae、Codex 等 AI IDE 直接调用
-- **国际化支持**：支持中英文界面切换
-
 ---
 
 ## 功能特性
@@ -78,6 +68,7 @@ JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 
 - 多环境配置（开发、测试、生产）
 - 环境变量和 Header 管理，支持激活环境切换
 - 测试数据文件上传与预览
+- 界面支持中英文切换
 
 ### 定时任务与基线
 
@@ -116,71 +107,27 @@ JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 
 
 ```
 jmeter-agent/
-├── jmeter-agent-backend/         # 后端服务 (Python / FastAPI)
+├── jmeter-agent-backend/         # 后端服务（Python / FastAPI）
 │   ├── app/
-│   │   ├── main.py               # 应用入口
-│   │   ├── api/                  # API 路由
-│   │   │   ├── routes.py         # 主路由（测试计划/执行/AI/RAG/系统等）
-│   │   │   ├── auth_routes.py    # 认证与用户管理
-│   │   │   ├── baseline_routes.py# 性能基线
-│   │   │   ├── schedule_routes.py# 定时任务
-│   │   │   ├── data_routes.py    # 测试数据文件
-│   │   │   └── mcp_routes.py     # MCP Server
-│   │   ├── core/                 # 核心配置、i18n、语言工具
-│   │   ├── middleware/           # 限流、并发控制中间件
-│   │   ├── models/               # db.py 数据库模型 / schemas.py Pydantic 模型
-│   │   └── services/             # 业务服务
-│   │       ├── ai/               # AI 服务
-│   │       │   ├── adapters/     # 模型适配器（OpenAI/Claude/兼容接口）
-│   │       │   ├── agent/        # Agent 框架
-│   │       │   ├── agents/       # 具体 Agent 实现
-│   │       │   ├── memory/       # 对话记忆
-│   │       │   ├── prompts/      # 提示词
-│   │       │   ├── rag/          # RAG 向量检索
-│   │       │   └── analyzer.py   # 报告分析器
-│   │       ├── jmeter/           # JMeter 服务
-│   │       │   ├── executor.py            # 测试执行器
-│   │       │   ├── distributed_executor.py# 分布式执行器
-│   │       │   ├── jmx_builder.py         # JMX 构建器
-│   │       │   ├── jmx_generator.py       # JMX 生成器
-│   │       │   ├── jmx_parser.py          # JMX 解析器
-│   │       │   ├── report_parser.py       # 报告解析器
-│   │       │   ├── resource_monitor.py    # 资源监控
-│   │       │   ├── sla_engine.py          # SLA 校验
-│   │       │   ├── regression_engine.py   # 回归检测
-│   │       │   └── test_scheduler.py      # 任务调度
-│   │       ├── insights_engine.py # 洞察分析引擎
-│   │       ├── ml_analysis.py     # 机器学习异常检测
-│   │       ├── openapi_importer.py# OpenAPI 导入
-│   │       ├── scheduler.py       # 定时调度
-│   │       ├── notifications.py   # 通知服务
-│   │       ├── mcp_server.py      # MCP Server 实现
-│   │       ├── ws_manager.py      # WebSocket 管理
-│   │       ├── storage.py         # 文件存储
-│   │       └── db_store.py        # 数据存取
-│   ├── tests/                    # 单元测试
-│   ├── test_plans/               # 测试计划存储（运行时生成）
-│   ├── reports/                  # 测试报告存储（运行时生成）
-│   ├── requirements.txt          # Python 依赖
-│   └── .env.example              # 环境变量示例
-├── jmeter-agent-frontend/        # 前端应用 (Vue 3 / TypeScript)
-│   ├── src/
-│   │   ├── api/                  # API 客户端 (axios)
-│   │   ├── components/           # 通用组件
-│   │   ├── composables/          # 组合式函数
-│   │   ├── router/               # 路由配置
-│   │   ├── store/                # 状态管理 (Pinia)
-│   │   ├── styles/               # 全局样式
-│   │   ├── utils/                # 工具函数
-│   │   └── views/                # 页面组件（测试计划/JMX编辑器/执行/报告/AI对话/基线/调度等）
-│   ├── tests/                    # 前端测试 (Vitest)
-│   ├── vite.config.ts            # Vite 配置（含后端代理）
-│   └── package.json              # 前端依赖
-├── docs/                         # 项目文档（修复记录等）
-├── gitlab-ci-example.yml         # GitLab CI 集成示例
-├── reqres-openapi.yaml           # OpenAPI 导入示例
+│   │   ├── api/                  # API 路由（认证、测试计划/执行、AI、RAG、系统、MCP）
+│   │   ├── core/                 # 配置、i18n、通用工具
+│   │   ├── middleware/           # 限流与并发控制
+│   │   ├── models/               # 数据库模型与 Pydantic 模式
+│   │   └── services/
+│   │       ├── ai/               # 模型适配、Agent、RAG、报告分析
+│   │       └── jmeter/           # 测试执行、JMX 构建/解析、SLA、调度
+│   ├── tests/                    # 后端测试（pytest）
+│   ├── requirements*.txt         # 依赖清单与锁文件
+│   └── .env.example              # 环境变量模板
+├── jmeter-agent-frontend/        # 前端应用（Vue 3 / TypeScript / Vite）
+│   ├── src/                      # 页面、组件、API 客户端、状态管理
+│   └── tests/                    # 前端测试（Vitest）
+├── .github/workflows/            # CI：质量门禁与性能门禁
+├── docs/                         # 项目文档（修复记录）
 ├── start.bat / start.sh          # 一键启动脚本
-└── LICENSE                       # Apache 2.0 许可证
+├── reqres-openapi.yaml           # OpenAPI 导入示例
+├── gitlab-ci-example.yml         # GitLab CI 集成示例
+└── LICENSE                       # Apache 2.0
 ```
 
 > **不包含在仓库中的目录**（由 `.gitignore` 排除）：
@@ -361,38 +308,23 @@ npm run dev
 
 ### 环境变量
 
+常用配置如下（**生产环境务必修改** `JWT_SECRET` 与默认管理员密码；服务绑定非本机地址时同样必须修改）：
+
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
-| `HOST` / `PORT` | 后端监听地址与端口；非本机绑定须更换默认密钥和管理员密码 | `127.0.0.1` / `8000` |
+| `HOST` / `PORT` | 后端监听地址与端口 | `127.0.0.1` / `8000` |
 | `DEBUG` | 调试模式 | `true` |
 | `DATABASE_URL` | 数据库连接 | `sqlite+aiosqlite:///./jmeter_agent.db` |
-| `JWT_SECRET` | JWT 签名密钥 | `change-me-in-production-use-env-var` |
-| `JWT_EXPIRE_MINUTES` | Access Token 过期时间（分钟） | `60` |
-| `JWT_REFRESH_EXPIRE_DAYS` | Refresh Token 过期时间（天） | `7` |
-| `DEFAULT_ADMIN_USERNAME` | 默认管理员用户名 | `admin` |
-| `DEFAULT_ADMIN_PASSWORD` | 默认管理员密码 | `admin123` |
-| `RATE_LIMIT_ENABLED` | API 限流总开关 | `true` |
-| `RATE_LIMIT_GLOBAL` | 全局限流 | `200/minute` |
-| `RATE_LIMIT_AUTH` | 登录接口限流 | `10/minute` |
-| `RATE_LIMIT_AI` | AI 接口限流 | `30/minute` |
-| `RATE_LIMIT_MCP` | MCP 接口限流 | `60/minute` |
-| `OPENAI_API_KEY` / `OPENAI_API_BASE` / `OPENAI_MODEL` | OpenAI 配置 | - / 官方地址 / `gpt-4o` |
-| `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL` | Claude 配置 | - / `claude-3-5-sonnet-20241022` |
-| `QWEN_API_KEY` / `QWEN_API_BASE` / `QWEN_MODEL` | 通义千问配置 | - / 阿里云兼容地址 / `qwen-max` |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_API_BASE` / `DEEPSEEK_MODEL` | DeepSeek 配置 | - / 官方地址 / `deepseek-chat` |
+| `JWT_SECRET` | JWT 签名密钥（生产必改） | `change-me-in-production-use-env-var` |
+| `DEFAULT_ADMIN_USERNAME` / `DEFAULT_ADMIN_PASSWORD` | 默认管理员账号与密码 | `admin` / `admin123` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `QWEN_API_KEY` / `DEEPSEEK_API_KEY` | 各模型 API Key（至少配置一个），配套 `*_API_BASE`、`*_MODEL` 可选 | - |
 | `DEFAULT_AI_MODEL` | 默认 AI 模型 | `openai` |
-| `JMETER_HOME` | JMeter 可执行文件目录（指向 `bin` 或 JMeter 安装根目录均可） | `<项目根>/bin` |
+| `JMETER_HOME` | JMeter 可执行文件目录（`bin` 或安装根目录均可） | `<项目根>/bin` |
 | `JMETER_TIMEOUT` | 单次测试超时（秒） | `3600` |
-| `RESOURCE_CPU_THRESHOLD` | CPU 使用率阈值（%） | `80` |
-| `RESOURCE_MEMORY_THRESHOLD` | 内存使用率阈值（%） | `85` |
-| `RESOURCE_COOLDOWN_SECONDS` | 相邻测试最小间隔（秒） | `10` |
-| `RESOURCE_MAX_WAIT_SECONDS` | 资源等待最长时长（秒） | `300` |
+| `RESOURCE_CPU_THRESHOLD` / `RESOURCE_MEMORY_THRESHOLD` | 触发排队的 CPU / 内存阈值（%） | `80` / `85` |
 | `RESOURCE_MAX_CONCURRENT_TESTS` | 最大并发测试数 | `2` |
-| `AGENT_TOOL_TIMEOUT_SECONDS` | Agent 单次工具调用超时（秒） | `600` |
-| `AGENT_MAX_CONCURRENT` | Agent 最大并发执行数 | `3` |
-| `MEMORY_PERSIST_ENABLED` | 对话记忆持久化 | `true` |
 
-> 除环境变量外，也可以在系统"设置"页面通过界面管理 AI 模型配置（存储于 `ai_models_config.json`）。
+> Token 有效期、限流（`RATE_LIMIT_*`）、Agent 并发与超时、对话记忆开关等完整配置见 [.env.example](jmeter-agent-backend/.env.example)。AI 模型也可以在系统"设置"页面通过界面管理（存储于运行时生成的 `ai_models_config.json`）。
 
 ### JMeter JVM 配置
 
@@ -414,92 +346,19 @@ JMETER_GC_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=100
 
 ## API 接口
 
-所有接口统一前缀 `/api/v1`（除 MCP SSE 外），需 JWT 认证的接口通过 `Authorization: Bearer <token>` 访问。
+所有接口统一前缀 `/api/v1`（MCP SSE 除外），需认证的接口通过 `Authorization: Bearer <token>` 访问。
 
-### 认证与用户
+| 模块 | 代表端点 | 能力 |
+|------|----------|------|
+| 认证与用户 | `/auth/login`、`/auth/refresh`、`/auth/users` | JWT 登录刷新、用户与角色管理 |
+| 测试计划 | `/test-plans`、`/test-plans/generate`、`/test-plans/{id}/jmx/*` | AI 生成、JMX 组件树编辑、原文查看与下载 |
+| 测试执行 | `/test-plans/{id}/execute`、`/executions/{id}`（`cancel`、`report`、`html-report`、`dashboard-data`、`log`） | 异步执行、取消、实时进度、报告与日志 |
+| 项目与环境 | `/projects`、`/projects/{id}/environments` | 多项目、多环境与激活环境切换 |
+| AI 与 Agent | `/ai/models`、`/ai/workflow/stream`、`/agent/run`、`/agent/autotune`、`/openapi/import` | 模型配置与连通性测试、Agent、自动调优、OpenAPI 导入 |
+| 分析 / RAG / 基线 / 调度 | `/analysis/reports`、`/rag/*`、`/baselines`、`/schedules`、`/data/*` | 报告分析下载、知识库检索、基线对比、定时任务、数据文件 |
+| 系统与 MCP | `/system/*`、`/jmeter/components`、`/jmeter/functions`、`/mcp/sse`、`/mcp/messages` | 系统状态与资源、JMeter 注册表、MCP 接入 |
 
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/auth/login` | 登录获取 Token |
-| POST | `/auth/refresh` | 刷新 Token |
-| POST | `/auth/logout` | 登出 |
-| GET | `/auth/me` | 当前用户信息 |
-| POST | `/auth/change-password` | 修改密码 |
-| GET / POST | `/auth/users` | 用户列表 / 创建用户 |
-| PUT / DELETE | `/auth/users/{username}/role` 等 | 角色管理 / 删除用户 |
-
-### 测试计划与执行
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/templates` | 测试模板列表 |
-| POST | `/test-plans/generate` | AI 生成测试计划 |
-| GET / DELETE | `/test-plans` / `/test-plans/{id}` | 计划列表 / 删除 |
-| GET | `/test-plans/{id}/jmx/tree` | 获取 JMX 组件树 |
-| PUT | `/test-plans/{id}/tree` | 更新组件树 |
-| GET | `/test-plans/{id}/jmx/content` | 获取 JMX 原文 |
-| GET | `/test-plans/{id}/download` | 下载 JMX |
-| POST | `/test-plans/{id}/execute` | 执行测试计划 |
-| GET | `/executions` | 执行记录列表 |
-| GET | `/executions/{id}` | 执行详情 |
-| POST | `/executions/{id}/cancel` | 取消执行 |
-| GET | `/executions/{id}/report` | 测试报告 |
-| GET | `/executions/{id}/html-report` | JMeter HTML 报告 |
-| GET | `/executions/{id}/dashboard-data` | 图表数据 |
-| GET | `/executions/{id}/log` | 执行日志 |
-
-### 项目与环境
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET / POST | `/projects` | 项目列表 / 创建项目 |
-| GET / PUT / DELETE | `/projects/{id}` | 项目详情 / 更新 / 删除 |
-| GET / POST | `/projects/{id}/environments` | 环境列表 / 创建环境 |
-| PUT / DELETE | `/projects/{id}/environments/{env_id}` | 更新 / 删除环境 |
-| PUT | `/projects/{id}/environments/active/{env_id}` | 切换激活环境 |
-
-### AI 与 Agent
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/ai/models` | AI 模型列表 |
-| GET / POST / PUT / DELETE | `/ai/model-configs[/{id}]` | 模型配置管理 |
-| POST | `/ai/model-configs/{id}/test` | 测试模型连通性 |
-| POST | `/ai/workflow/stream` | AI 工作流（SSE 流式） |
-| GET | `/agent/agents` | Agent 列表 |
-| POST | `/agent/run` / `/agent/run/stream` | 运行 Agent（普通 / 流式） |
-| POST | `/agent/workflow` / `/agent/workflow/stream` | Agent 工作流 |
-| POST | `/agent/autotune` | 自动调优 |
-| POST | `/openapi/import` | 导入 OpenAPI 文档 |
-
-### 分析、RAG 与基线
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/analysis/reports` | 分析报告列表 |
-| GET | `/analysis/reports/{execution_id}` | 单次分析报告 |
-| GET | `/analysis/reports/{execution_id}/download` | 下载分析报告 |
-| GET | `/rag/stats` / `/rag/documents` | RAG 统计 / 文档列表 |
-| GET | `/rag/search` | RAG 检索 |
-| GET | `/rag/compare` | RAG 模块对比 |
-| POST | `/rag/archive/manual` | 手动归档 |
-| GET / POST / DELETE | `/baselines` 等 | 性能基线管理 |
-| GET / POST / DELETE | `/schedules` 等 | 定时任务管理 |
-| POST / GET / DELETE | `/data/upload` `/data/files` 等 | 测试数据文件管理 |
-
-### 系统与 MCP
-
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/system/info` | 系统信息 |
-| GET | `/system/resources` | 资源使用情况 |
-| GET / PUT | `/system/paths` | 存储路径配置 |
-| GET | `/jmeter/components` / `/jmeter/functions` | JMeter 组件 / 函数注册表 |
-| GET | `/mcp/status` | MCP 状态 |
-| POST | `/mcp/messages` | MCP 消息端点 |
-| GET | `/mcp/sse` | MCP SSE 连接 |
-
-完整交互式 API 文档：http://localhost:8000/api/docs
+完整的请求 / 响应 schema 与在线调试见交互式文档：http://localhost:8000/api/docs
 
 ---
 
