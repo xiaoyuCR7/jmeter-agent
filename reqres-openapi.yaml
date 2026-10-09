@@ -1,0 +1,2038 @@
+openapi: 3.0.3
+info:
+  title: ReqRes API
+  description: |
+    ReqRes is a hosted REST API with real endpoints, persistent data, and request logs.
+    Use the free public API for testing - or sign up to create your own backend with
+    custom collections, auth, and logs.
+
+    **API Categories:**
+    - **Demo API:** Public teaching endpoints with fixture data. No authentication required.
+    - **Project API:** Project-scoped endpoints with real persistence. Requires API key.
+    - **Agent Sandbox:** Endpoints designed for AI coding agents with cursor pagination and deliberate error scenarios.
+    - **App User API:** End-user authentication via magic links with scoped record access.
+  version: 2026.04.13
+  contact:
+    name: ReqRes Support
+    email: support@reqres.in
+    url: https://reqres.in
+
+servers:
+  - url: https://reqres.in
+    description: Production server
+
+security:
+  - ApiKeyAuth: []
+  - BearerAuth: []
+  - AgentIdAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: |
+        Required for Project API endpoints.
+        Get your key from https://app.reqres.in/api-keys
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Required for App User API endpoints (/app/*).
+        Obtained via magic link verification flow.
+    AgentIdAuth:
+      type: apiKey
+      in: header
+      name: x-agent-id
+      description: |
+        Required for Agent Sandbox endpoints for paid tier.
+        Format: agt_<64 hex characters>
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 2
+        email:
+          type: string
+          format: email
+          example: janet.weaver@reqres.in
+        first_name:
+          type: string
+          example: Janet
+        last_name:
+          type: string
+          example: Weaver
+        avatar:
+          type: string
+          format: uri
+          example: https://reqres.in/img/faces/2-image.jpg
+
+    UnknownResource:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 2
+        name:
+          type: string
+          example: fuchsia rose
+        year:
+          type: integer
+          example: 2001
+        color:
+          type: string
+          example: #C74375
+        pantone_value:
+          type: string
+          example: 17-2031
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 6
+        total:
+          type: integer
+          example: 12
+        total_pages:
+          type: integer
+          example: 2
+
+    UserListResponse:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+
+    UnknownResourceListResponse:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        total_pages:
+          type: integer
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/UnknownResource'
+
+    UserCreateRequest:
+      type: object
+      required:
+        - name
+        - job
+      properties:
+        name:
+          type: string
+          example: morpheus
+        job:
+          type: string
+          example: leader
+
+    UserUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          example: morpheus
+        job:
+          type: string
+          example: zion resident
+
+    UserCreateResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        job:
+          type: string
+        id:
+          type: string
+          example: 123
+        createdAt:
+          type: string
+          format: date-time
+          example: 2026-02-06T10:30:00.000Z
+
+    UserUpdateResponse:
+      type: object
+      properties:
+        name:
+          type: string
+        job:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+          example: 2026-02-06T10:30:00.000Z
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: eve.holt@reqres.in
+        password:
+          type: string
+          example: pistol
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: QpwL5tke4Pnpja7X4
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          example: eve.holt@reqres.in
+        password:
+          type: string
+          example: pistol
+
+    RegisterResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 4
+        token:
+          type: string
+          example: QpwL5tke4Pnpja7X4
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: Missing email or username
+        message:
+          type: string
+          example: The x-api-key header is required for this endpoint.
+        hint:
+          type: string
+          example: Create a free key at app.reqres.in and send it as x-api-key.
+        next_steps:
+          type: array
+          items:
+            type: string
+        docs_url:
+          type: string
+          format: uri
+        example_curl:
+          type: string
+
+    CollectionRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateRecordRequest:
+      type: object
+      required:
+        - data
+      properties:
+        data:
+          type: object
+          description: The record data to create
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        rate_limit:
+          type: integer
+          example: 100
+        rate_limit_remaining:
+          type: integer
+          example: 95
+
+    AppUserLoginRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          example: user@example.com
+
+    AppUserVerifyRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          description: Magic link token
+
+    AppUserVerifyResponse:
+      type: object
+      properties:
+        session_token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+              format: email
+
+  examples:
+    userListExample:
+      value:
+        page: 2
+        per_page: 6
+        total: 12
+        total_pages: 2
+        data:
+          - id: 7
+            email: michael.lawson@reqres.in
+            first_name: Michael
+            last_name: Lawson
+            avatar: https://reqres.in/img/faces/7-image.jpg
+
+    singleUserExample:
+      value:
+        data:
+          id: 2
+          email: janet.weaver@reqres.in
+          first_name: Janet
+          last_name: Weaver
+          avatar: https://reqres.in/img/faces/2-image.jpg
+
+    loginSuccessExample:
+      value:
+        token: QpwL5tke4Pnpja7X4
+
+    loginFailureExample:
+      value:
+        error: Missing email or username
+
+    registerSuccessExample:
+      value:
+        id: 4
+        token: QpwL5tke4Pnpja7X4
+
+    registerFailureExample:
+      value:
+        error: Missing password
+
+paths:
+  /{resource}:
+    get:
+      summary: Fetches a resource list
+      description: |
+        Fetches a paginated list of any resource type.
+        **Authentication:** Not required for Demo API.
+      operationId: getResource
+      tags:
+        - Demo API - Generic Resources
+      security: []
+      parameters:
+        - name: resource
+          in: path
+          description: Resource type (e.g., unknown, users, etc.)
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number to retrieve
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: delay
+          in: query
+          description: Delay response by N seconds
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        '200':
+          description: Successful retrieval of resource list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  page:
+                    type: integer
+                  per_page:
+                    type: integer
+                  total:
+                    type: integer
+                  total_pages:
+                    type: integer
+                  data:
+                    type: array
+                    items:
+                      type: object
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /{resource}/{id}:
+    get:
+      summary: Fetches an unknown resource
+      description: |
+        Fetches a single resource by ID.
+        **Authentication:** Not required for Demo API.
+      operationId: getResourceById
+      tags:
+        - Demo API - Generic Resources
+      security: []
+      parameters:
+        - name: resource
+          in: path
+          description: Resource type
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Resource ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Successful retrieval of resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Updates an unknown resource
+      description: |
+        Updates a resource with full replacement.
+        **Authentication:** Not required for Demo API.
+      operationId: putResourceById
+      tags:
+        - Demo API - Generic Resources
+      security: []
+      parameters:
+        - name: resource
+          in: path
+          description: Resource type
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Resource ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Resource updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updatedAt:
+                    type: string
+                    format: date-time
+
+    patch:
+      summary: Updates an unknown resource
+      description: |
+        Updates a resource with partial data.
+        **Authentication:** Not required for Demo API.
+      operationId: patchResourceById
+      tags:
+        - Demo API - Generic Resources
+      security: []
+      parameters:
+        - name: resource
+          in: path
+          description: Resource type
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Resource ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Resource updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updatedAt:
+                    type: string
+                    format: date-time
+
+    delete:
+      summary: Deletes an unknown resource
+      description: |
+        Deletes a resource.
+        **Authentication:** Not required for Demo API.
+      operationId: deleteResourceById
+      tags:
+        - Demo API - Generic Resources
+      security: []
+      parameters:
+        - name: resource
+          in: path
+          description: Resource type
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Resource ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: Resource deleted successfully (no content)
+
+  /api/users:
+    get:
+      summary: List demo users (paginated)
+      description: |
+        Fetches a paginated list of demo users.
+        **Authentication:** Not required for Demo API.
+      operationId: getUsers
+      tags:
+        - Demo API - Users
+      security: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number to retrieve
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 6
+        - name: delay
+          in: query
+          description: Delay response by N seconds (simulates slow network)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        '200':
+          description: Successful retrieval of user list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserListResponse'
+              examples:
+                default:
+                  $ref: '#/components/examples/userListExample'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a user (echoed, not persisted)
+      description: |
+        Creates a new user. The response will echo the request data with an generated ID and timestamp.
+        **Note:** Data is not persisted.
+        **Authentication:** Not required for Demo API.
+      operationId: createUser
+      tags:
+        - Demo API - Users
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreateRequest'
+            examples:
+              default:
+                value:
+                  name: morpheus
+                  job: leader
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreateResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/users/{id}:
+    get:
+      summary: Get single user by ID
+      description: |
+        Fetches a single user by their ID.
+        **Authentication:** Not required for Demo API.
+      operationId: getUserById
+      tags:
+        - Demo API - Users
+      security: []
+      parameters:
+        - name: id
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: delay
+          in: query
+          description: Delay response by N seconds
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        '200':
+          description: Successful retrieval of user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+              examples:
+                default:
+                  $ref: '#/components/examples/singleUserExample'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update a user (full replace, echoed)
+      description: |
+        Updates a user with full replacement. The response will echo the request data.
+        **Note:** Data is not persisted.
+        **Authentication:** Not required for Demo API.
+      operationId: updateUser
+      tags:
+        - Demo API - Users
+      security: []
+      parameters:
+        - name: id
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+            examples:
+              default:
+                value:
+                  name: morpheus
+                  job: zion resident
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserUpdateResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      summary: Partial update a user (echoed)
+      description: |
+        Updates a user with partial data. Only provided fields are updated.
+        **Note:** Data is not persisted.
+        **Authentication:** Not required for Demo API.
+      operationId: patchUser
+      tags:
+        - Demo API - Users
+      security: []
+      parameters:
+        - name: id
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserUpdateRequest'
+            examples:
+              default:
+                value:
+                  job: leader
+      responses:
+        '200':
+          description: User updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserUpdateResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a user
+      description: |
+        Deletes a user. Returns 204 No Content on success.
+        **Authentication:** Not required for Demo API.
+      operationId: deleteUser
+      tags:
+        - Demo API - Users
+      security: []
+      parameters:
+        - name: id
+          in: path
+          description: User ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '204':
+          description: User deleted successfully (no content)
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/unknown:
+    get:
+      summary: List color resources (Pantone colors)
+      description: |
+        Fetches a paginated list of color resources with Pantone color information.
+        **Authentication:** Not required for Demo API.
+      operationId: getUnknownResources
+      tags:
+        - Demo API - Resources
+      security: []
+      parameters:
+        - name: page
+          in: query
+          description: Page number to retrieve
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: delay
+          in: query
+          description: Delay response by N seconds
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 10
+      responses:
+        '200':
+          description: Successful retrieval of color resources
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnknownResourceListResponse'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/unknown/{id}:
+    get:
+      summary: Get single color resource by ID
+      description: |
+        Fetches a single color resource by its ID.
+        **Authentication:** Not required for Demo API.
+      operationId: getUnknownResourceById
+      tags:
+        - Demo API - Resources
+      parameters:
+        - name: id
+          in: path
+          description: Resource ID
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Successful retrieval of color resource
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UnknownResource'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/login:
+    post:
+      summary: Login with fixture users
+      description: |
+        Authenticates a user with email and password. Returns a token on success.
+        **Authentication:** Not required.
+        **Fixture emails:** george.bluth@reqres.in, janet.weaver@reqres.in, emma.wong@reqres.in, eve.holt@reqres.in, etc.
+      operationId: login
+      tags:
+        - Demo API - Authentication
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              default:
+                value:
+                  email: eve.holt@reqres.in
+                  password: pistol
+              missingPassword:
+                value:
+                  email: eve.holt@reqres.in
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+              examples:
+                success:
+                  $ref: '#/components/examples/loginSuccessExample'
+        '400':
+          description: Login failed - missing credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failure:
+                  $ref: '#/components/examples/loginFailureExample'
+
+  /api/register:
+    post:
+      summary: Register with fixture users
+      description: |
+        Registers a new user. Returns an ID and token on success.
+        **Authentication:** Not required.
+        **Fixture emails:** Use fixture emails for testing.
+      operationId: register
+      tags:
+        - Demo API - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            examples:
+              default:
+                value:
+                  email: eve.holt@reqres.in
+                  password: pistol
+              missingPassword:
+                value:
+                  email: eve.holt@reqres.in
+      responses:
+        '200':
+          description: Registration successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterResponse'
+              examples:
+                success:
+                  $ref: '#/components/examples/registerSuccessExample'
+        '400':
+          description: Registration failed - missing credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                failure:
+                  $ref: '#/components/examples/registerFailureExample'
+
+  /api/logout:
+    post:
+      summary: Ends a session
+      description: |
+        Logs out the current user session.
+        **Authentication:** Not required for Demo API.
+      operationId: logout
+      tags:
+        - Demo API - Authentication
+      security: []
+      responses:
+        '200':
+          description: Logout successful
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/collections/{slug}/records:
+    get:
+      summary: List records in a collection
+      description: |
+        Fetches a paginated list of records from a collection.
+        **Authentication:** Required - x-api-key header.
+      operationId: getCollectionRecords
+      tags:
+        - Project API - Collections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier (e.g., products)
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Successful retrieval of records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    $ref: '#/components/schemas/Pagination'
+        '401':
+          description: Unauthorized - missing or invalid API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Collection not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create a record
+      description: |
+        Creates a new record in the specified collection.
+        **Authentication:** Required - x-api-key header.
+        **Note:** Request body must be wrapped in {"data": {...}}.
+      operationId: createCollectionRecord
+      tags:
+        - Project API - Collections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+            examples:
+              default:
+                value:
+                  data:
+                    name: New Product
+                    price: 9.99
+                    category: Test
+                    in_stock: true
+      responses:
+        '201':
+          description: Record created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  id:
+                    type: string
+                  created_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid request - missing "data" wrapper
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/collections/{slug}/records/{id}:
+    get:
+      summary: Get single record
+      description: |
+        Fetches a single record from a collection by ID.
+        **Authentication:** Required - x-api-key header.
+      operationId: getCollectionRecordById
+      tags:
+        - Project API - Collections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful retrieval of record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  id:
+                    type: string
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update a record (full replace)
+      description: |
+        Updates a record with full replacement.
+        **Authentication:** Required - x-api-key header.
+      operationId: updateCollectionRecord
+      tags:
+        - Project API - Collections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+      responses:
+        '200':
+          description: Record updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  id:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    patch:
+      summary: Partial update a record
+      description: |
+        Updates a record with partial data.
+        **Authentication:** Required - x-api-key header.
+      operationId: patchCollectionRecord
+      tags:
+        - Project API - Collections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+      responses:
+        '200':
+          description: Record updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                  id:
+                    type: string
+                  updated_at:
+                    type: string
+                    format: date-time
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete a record
+      description: |
+        Deletes a record from the collection.
+        **Authentication:** Required - x-api-key header.
+      operationId: deleteCollectionRecord
+      tags:
+        - Project API - Collections
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Record deleted successfully (no content)
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/custom/{path}:
+    get:
+      summary: Get custom endpoint response
+      description: |
+        Returns a custom JSON response defined by the project owner.
+        **Authentication:** Required - x-api-key header.
+      operationId: getCustomEndpoint
+      tags:
+        - Project API - Custom Endpoints
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: path
+          in: path
+          description: Custom endpoint path
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Custom response returned
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Custom endpoint not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Post to custom endpoint
+      description: |
+        Sends a POST request to a custom endpoint defined by the project owner.
+        **Authentication:** Required - x-api-key header.
+      operationId: postCustomEndpoint
+      tags:
+        - Project API - Custom Endpoints
+      security:
+        - ApiKeyAuth: []
+      parameters:
+        - name: path
+          in: path
+          description: Custom endpoint path
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Project ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Custom response returned
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /agent/v1/health:
+    get:
+      summary: Health probe with rate-limit status
+      description: |
+        Health check endpoint with rate limit information.
+        **Authentication:** Not required for free tier (100 requests/day per IP).
+        Paid tier requires x-agent-id header.
+      operationId: getAgentHealth
+      tags:
+        - Agent Sandbox
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /agent/v1/users:
+    get:
+      summary: Paginated user list with cursor pagination
+      description: |
+        Fetches a paginated list of users using cursor-based pagination.
+        **Authentication:** Not required for free tier.
+      operationId: getAgentUsers
+      tags:
+        - Agent Sandbox
+      security: []
+      parameters:
+        - name: cursor
+          in: query
+          description: Base64-encoded cursor for pagination
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Number of items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Successful retrieval of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+                    properties:
+                      next_cursor:
+                        type: string
+                      has_more:
+                        type: boolean
+
+  /agent/v1/users/{id}:
+    get:
+      summary: Single user with optional expansion
+      description: |
+        Fetches a single user with optional expansion of nested resources.
+        **Authentication:** Not required for free tier.
+      operationId: getAgentUserById
+      tags:
+        - Agent Sandbox
+      security: []
+      parameters:
+        - name: id
+          in: path
+          description: User ID (ULID format with type prefix)
+          required: true
+          schema:
+            type: string
+        - name: expand
+          in: query
+          description: Comma-separated list of relations to expand
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful retrieval of user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /agent/v1/auth/login:
+    post:
+      summary: Auth flow with realistic shape variation
+      description: |
+        Authentication endpoint that may return different response shapes including MFA branch.
+        **Authentication:** Not required for free tier.
+      operationId: agentAuthLogin
+      tags:
+        - Agent Sandbox
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+        '400':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /agent/v1/orders:
+    get:
+      summary: Orders with relational data
+      description: |
+        Fetches orders with relational data including customer, line items, and products.
+        **Authentication:** Not required for free tier.
+      operationId: getAgentOrders
+      tags:
+        - Agent Sandbox
+      security: []
+      parameters:
+        - name: cursor
+          in: query
+          description: Base64-encoded cursor
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Items per page
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Successful retrieval of orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                  pagination:
+                    type: object
+
+  /agent/v1/scenarios:
+    get:
+      summary: List available training scenarios
+      description: |
+        Lists all available deliberate failure scenarios for testing error handling.
+        **Authentication:** Not required for free tier.
+      operationId: getAgentScenarios
+      tags:
+        - Agent Sandbox
+      security: []
+      responses:
+        '200':
+          description: Successful retrieval of scenarios
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        description:
+                          type: string
+
+  /agent/v1/scenarios/{scenario}:
+    get:
+      summary: Trigger a deliberate failure mode
+      description: |
+        Triggers a deliberate failure mode for testing error handling.
+        **Authentication:** Not required for free tier.
+      operationId: triggerAgentScenario
+      tags:
+        - Agent Sandbox
+      security: []
+      parameters:
+        - name: scenario
+          in: path
+          description: Scenario name
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Scenario executed (may return error-like response)
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Scenario not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/app-users/login:
+    post:
+      summary: Start magic link login flow
+      description: |
+        Initiates magic link login by sending a verification code to the user's email.
+        **Authentication:** Required - x-api-key (public key) header.
+      operationId: appUserLogin
+      tags:
+        - App User API
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppUserLoginRequest'
+      responses:
+        '200':
+          description: Magic link initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/app-users/verify:
+    post:
+      summary: Exchange magic token for session
+      description: |
+        Verifies the magic link token and returns a session token.
+        **Authentication:** Required - x-api-key (public key) header.
+      operationId: appUserVerify
+      tags:
+        - App User API
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AppUserVerifyRequest'
+      responses:
+        '200':
+          description: Verification successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppUserVerifyResponse'
+        '400':
+          description: Invalid token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /app/me:
+    get:
+      summary: Get current app user info
+      description: |
+        Retrieves information about the current authenticated app user.
+        **Authentication:** Required - Authorization: Bearer <session_token> header.
+      operationId: getAppUserMe
+      tags:
+        - App User API
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Successful retrieval of user info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  email:
+                    type: string
+                    format: email
+        '401':
+          description: Unauthorized - invalid session token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /app/collections/{slug}/records:
+    get:
+      summary: List user-scoped records
+      description: |
+        Fetches records from a collection scoped to the current app user.
+        **Authentication:** Required - Authorization: Bearer <session_token> header.
+      operationId: getAppCollectionRecords
+      tags:
+        - App User API
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+      responses:
+        '200':
+          description: Successful retrieval of records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    post:
+      summary: Create user-scoped record
+      description: |
+        Creates a new record in a collection scoped to the current app user.
+        **Authentication:** Required - Authorization: Bearer <session_token> header.
+      operationId: createAppCollectionRecord
+      tags:
+        - App User API
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+      responses:
+        '201':
+          description: Record created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /app/collections/{slug}/records/{id}:
+    get:
+      summary: Get user-scoped record
+      description: |
+        Fetches a single record from a collection scoped to the current app user.
+        **Authentication:** Required - Authorization: Bearer <session_token> header.
+      operationId: getAppCollectionRecordById
+      tags:
+        - App User API
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successful retrieval of record
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update user-scoped record
+      description: |
+        Updates a record in a collection scoped to the current app user.
+        **Authentication:** Required - Authorization: Bearer <session_token> header.
+      operationId: updateAppCollectionRecord
+      tags:
+        - App User API
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRecordRequest'
+      responses:
+        '200':
+          description: Record updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      summary: Delete user-scoped record
+      description: |
+        Deletes a record from a collection scoped to the current app user.
+        **Authentication:** Required - Authorization: Bearer <session_token> header.
+      operationId: deleteAppCollectionRecord
+      tags:
+        - App User API
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: slug
+          in: path
+          description: Collection identifier
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          description: Record ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Record deleted successfully (no content)
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Record not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'

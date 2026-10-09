@@ -1,0 +1,257 @@
+"""JMX property contracts shared by generation, tools, tuning and self-healing."""
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+import xml.etree.ElementTree as ET
+
+import pytest
+
+from app.models.schemas import APIEndpoint, ExtractionRule, TestConfig as LoadConfig, VariableBinding
+from app.services.jmeter.jmx_generator import JMXGenerator
+from app.services.jmeter.jmx_parser import parse_jmx
+
+
+def walk(node):
+    yield node
+    for child in node.get('children', []):
+        yield from walk(child)
+
+
+@pytest.mark.asyncio
+async def test_ai_jmx_request_reserves_output_before_model(monkeypatch):
+    from app.core.config import settings
+    from app.services.ai.adapters.deepseek_adapter import DeepSeekAdapter
+    from app.services.ai.adapters.factory import AIAdapterFactory
+    adapter = object.__new__(DeepSeekAdapter)
+    adapter.max_tokens = 8000
+    adapter.chat = AsyncMock(return_value='<jmeterTestPlan/>')
+    monkeypatch.setattr(AIAdapterFactory, 'create', lambda *args: adapter)
+    monkeypatch.setattr(settings, 'AGENT_CONTEXT_TOKEN_BUDGET', 12000)
+    with pytest.raises(ValueError, match='context budget'):
+        await JMXGenerator().generate_from_ai('GET /fixture', [], LoadConfig(test_type='baseline'))
+    adapter.chat.assert_not_awaited()
+    monkeypatch.setattr(settings, 'AGENT_CONTEXT_TOKEN_BUDGET', 32000)
+    assert await JMXGenerator().generate_from_ai('GET /fixture', [], LoadConfig(test_type='baseline')) == '<jmeterTestPlan/>'
+    assert adapter.chat.call_args.kwargs['max_tokens'] == 12000
+
+
+@pytest.mark.parametrize('base,protocol,host,port', [
+    ('https://example.invalid:8443/v1/', 'https', 'example.invalid', '8443'),
+    ('http://[2001:db8::1]:8080/v1', 'http', '2001:db8::1', '8080'),
+])
+def test_base_url_keeps_host_port_and_prefix(base, protocol, host, port):
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx(
+        [APIEndpoint(name='api', method='GET', path='/users')], LoadConfig(test_type='baseline'), base))
+    defaults = root.find('.//ConfigTestElement')
+    for name, expected in [('protocol', protocol), ('domain', host), ('port', port)]:
+        assert defaults.find(f'stringProp[@name="HTTPSampler.{name}"]').text == expected
+    assert root.find('.//HTTPSamplerProxy/stringProp[@name="HTTPSampler.path"]').text == '/v1/users'
+
+
+@pytest.mark.parametrize('body', [{'name': 'test'}, {}])
+def test_query_does_not_mix_with_raw_body_and_content_type_is_present(body):
+    from urllib.parse import parse_qs, urlsplit
+    import json
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx([
+        APIEndpoint(name='create', method='POST', path='/items?existing=1', body=body,
+                    query_params={'q': 'a b', 'token': '${token}'}, content_type='application/problem+json',
+                    expected_status=201)], LoadConfig(test_type='baseline'), 'https://example.invalid/api'))
+    sampler = root.find('.//HTTPSamplerProxy')
+    path = sampler.find('stringProp[@name="HTTPSampler.path"]').text
+    assert parse_qs(urlsplit(path).query) == {'existing': ['1'], 'q': ['a b'], 'token': ['${token}']}
+    assert '${token}' in path
+    args = sampler.findall('elementProp/collectionProp/elementProp')
+    assert len(args) == 1
+    assert json.loads(args[0].find('stringProp[@name="Argument.value"]').text) == body
+    assert sampler.find('boolProp[@name="HTTPSampler.postBodyRaw"]').text == 'true'
+    headers = [(entry.find('stringProp[@name="Header.name"]').text,
+                entry.find('stringProp[@name="Header.value"]').text)
+               for entry in root.findall('.//HeaderManager/collectionProp/elementProp')]
+    assert ('Content-Type', 'application/problem+json') in headers
+    assert root.find('.//ResponseAssertion/collectionProp/stringProp').text == '201'
+
+
+def test_content_type_header_explicit_override_and_raw_template_are_preserved():
+    endpoint = APIEndpoint(name='raw', method='POST', path='/raw', content_type='application/json',
+        headers={'content-type': 'text/plain'}, bindings=[VariableBinding(
+            variable_name='payload', target_location='body', target_key='', template='${payload}')])
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx([endpoint], LoadConfig(test_type='baseline'),
+                                                          'https://example.invalid'))
+    assert root.find('.//HTTPSamplerProxy/elementProp/collectionProp/elementProp/stringProp[@name="Argument.value"]').text == '${payload}'
+    values = [node.text for node in root.findall('.//HeaderManager//stringProp[@name="Header.value"]')]
+    assert 'text/plain' in values and 'application/json' not in values
+
+
+@pytest.mark.asyncio
+async def test_agent_endpoint_constructor_keeps_expected_status(monkeypatch, tmp_path):
+    from app.services.ai.agent.tools import jmx
+    from app.services import execution_lifecycle
+    fake = SimpleNamespace(register_path=AsyncMock(return_value=SimpleNamespace(id='registered')))
+    monkeypatch.setattr(execution_lifecycle, 'execution_lifecycle', fake)
+    saved = []
+    def save(self, content, **kwargs):
+        saved.append(content)
+        return str(tmp_path / 'generated.jmx')
+    monkeypatch.setattr(JMXGenerator, 'save_jmx', save)
+    await jmx.create_jmx('create', [{'name': 'create', 'method': 'POST', 'path': '/',
+                                   'expected_status': 204}], 'https://example.invalid')
+    assert ET.fromstring(saved[0]).find('.//ResponseAssertion/collectionProp/stringProp').text == '204'
+
+
+@pytest.mark.parametrize('values', [
+    {'test_type': 'spike'}, {'test_type': 'ramp_up', 'step_duration': 10},
+    {'test_type': 'ramp_up', 'step_users': 10},
+])
+def test_unsupported_load_controls_are_explicit(values):
+    with pytest.raises(ValueError, match='[Uu]nsupported'):
+        JMXGenerator().generate_basic_jmx([], LoadConfig(**values), 'https://example.invalid')
+
+
+@pytest.mark.parametrize('kind', ['baseline', 'concurrency', 'stress', 'stability', 'custom'])
+def test_complete_ui_defaults_generate_shared_rps_timer_without_losing_duration(kind):
+    config = LoadConfig(**LoadConfig(test_type=kind).model_dump())
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx(
+        [APIEndpoint(name='one', method='GET', path='/1'), APIEndpoint(name='two', method='GET', path='/2')],
+        config, 'https://example.invalid'))
+    timers = root.findall('.//ConstantThroughputTimer')
+    assert len(timers) == 1
+    assert timers[0].find("intProp[@name='calcMode']").text == '3'
+    assert timers[0].find('doubleProp/name').text == 'throughput'
+    assert float(timers[0].find('doubleProp/value').text) == 6000
+    assert root.find('.//ThreadGroup/stringProp[@name="ThreadGroup.duration"]').text == '300'
+    assert root.find('.//ThreadGroup/stringProp[@name="ThreadGroup.ramp_time"]').text == '60'
+    parsed_timer = next(node for node in walk(parse_jmx(ET.tostring(root, encoding='unicode')))
+                        if node.get('testclass') == 'ConstantThroughputTimer')
+    assert parsed_timer['properties']['throughput'] == 6000.0
+
+
+def test_template_rps_converts_samples_per_second_to_per_minute():
+    from app.api.routes import TEST_TEMPLATES
+    for template in TEST_TEMPLATES:
+        if template.id in {'ramp_up', 'spike'}:
+            continue
+        config = LoadConfig(**template.default_config.model_dump())
+        root = ET.fromstring(JMXGenerator().generate_basic_jmx([], config, 'https://example.invalid'))
+        assert float(root.find('.//ConstantThroughputTimer/doubleProp/value').text) == config.target_rps * 60
+
+
+@pytest.mark.parametrize('rate', [None, 0])
+def test_no_target_rate_means_no_rate_timer(rate):
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx([], LoadConfig(test_type='baseline', target_rps=rate),
+                                                          'https://example.invalid'))
+    assert root.find('.//ConstantThroughputTimer') is None
+
+
+def test_negative_target_rate_rejected():
+    with pytest.raises(ValueError, match='target_rps'):
+        JMXGenerator().generate_basic_jmx([], LoadConfig(test_type='baseline', target_rps=-1), 'https://example.invalid')
+
+
+def test_standard_double_property_keeps_throughput_on_editor_roundtrip():
+    from app.services.jmeter.jmx_builder import build_jmx
+    xml = '''<jmeterTestPlan><hashTree><TestPlan testclass="TestPlan"/><hashTree>
+      <ConstantThroughputTimer testclass="ConstantThroughputTimer"><doubleProp><name>throughput</name>
+      <value>6000.0</value><savedValue>0.0</savedValue></doubleProp><intProp name="calcMode">3</intProp>
+      </ConstantThroughputTimer><hashTree/></hashTree></hashTree></jmeterTestPlan>'''
+    node = parse_jmx(xml)
+    assert node['children'][0]['properties']['throughput'] == 6000.0
+    rebuilt = parse_jmx(build_jmx(node))
+    assert float(rebuilt['children'][0]['properties']['throughput']) == 6000
+    assert int(rebuilt['children'][0]['properties']['calcMode']) == 3
+
+
+def test_linear_ramp_up_remains_supported_without_step_request():
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx([], LoadConfig(
+        test_type='ramp_up', concurrent_users=20, ramp_up_seconds=40), 'https://example.invalid'))
+    assert root.find('.//ThreadGroup/stringProp[@name="ThreadGroup.ramp_time"]').text == '40'
+
+
+def test_absolute_endpoint_does_not_gain_base_prefix_and_keeps_query():
+    root = ET.fromstring(JMXGenerator().generate_basic_jmx([
+        APIEndpoint(name='absolute', method='GET', path='https://other.invalid/full?x=1', query_params={'y': '2'})],
+        LoadConfig(test_type='baseline'), 'https://example.invalid/base'))
+    assert root.find('.//HTTPSamplerProxy/stringProp[@name="HTTPSampler.path"]').text == 'https://other.invalid/full?x=1&y=2'
+
+
+@pytest.fixture
+def jmx_file(tmp_path):
+    xml = JMXGenerator().generate_basic_jmx(
+        [APIEndpoint(name='api', method='GET', path='/')],
+        LoadConfig(test_type='baseline', concurrent_users=1, duration_seconds=1, think_time_ms=5),
+        'https://example.invalid')
+    path = tmp_path / 'plan.jmx'
+    path.write_text(xml, encoding='utf-8')
+    return path
+
+
+def test_json_extractor_uses_jmeter_property():
+    root = ET.Element('hashTree')
+    JMXGenerator()._create_json_extractor(root, ExtractionRule(
+        ref_name='token', extract_type='json_path', expression='$.token'))
+    assert root.find('.//stringProp[@name="JSONPostProcessor.jsonPathExprs"]').text == '$.token'
+
+
+@pytest.mark.parametrize('location', ['path', 'header', 'query', 'body'])
+def test_bindings_emit_single_pair_of_braces(location):
+    endpoint = APIEndpoint(name='api', method='POST', path='/user/{id}', bindings=[
+        VariableBinding(variable_name='id', target_location=location, target_key='id')])
+    generator = JMXGenerator()
+    resolved = generator._resolve_bindings(endpoint)
+    actual = {'path': resolved.path, 'header': (resolved.headers or {}).get('id'),
+              'query': (resolved.query_params or {}).get('id'), 'body': (resolved.body or {}).get('id')}[location]
+    assert actual == ('/user/${id}' if location == 'path' else '${id}')
+    if location == 'header':
+        assert generator._resolve_header_bindings(endpoint)['id'] == '${id}'
+    assert endpoint.path == '/user/{id}'
+
+
+@pytest.mark.asyncio
+async def test_update_tool_preserves_dict_property_contract(jmx_file, monkeypatch):
+    from app.core import config
+    from app.services.ai.agent.tools.jmx import update_jmx
+
+    monkeypatch.setattr(config.settings, 'TEST_PLANS_DIR_DEFAULT', str(jmx_file.parent))
+    monkeypatch.setattr(config, 'load_paths_config', lambda: {})
+    result = await update_jmx(str(jmx_file), concurrent_users=12, duration_seconds=45,
+                              ramp_up_seconds=3, think_time_ms=25)
+    assert result.get('updated'), result
+    nodes = list(walk(parse_jmx(str(jmx_file))))
+    props = next(n['properties'] for n in nodes if n.get('testclass') == 'ThreadGroup')
+    assert props['ThreadGroup.num_threads'] == '12'
+    assert props['ThreadGroup.duration'] == '45'
+    assert props['ThreadGroup.ramp_time'] == '3'
+    assert props['ThreadGroup.scheduler'] is True
+    assert any(n.get('properties', {}).get('ConstantTimer.delay') == '25' for n in nodes)
+
+
+@pytest.mark.asyncio
+async def test_autotune_modifies_real_parsed_properties(jmx_file, monkeypatch):
+    from app.services.ai.agents.autotune_agent import AutoTuneAgent, AutoTuneConfig
+    from app.services import execution_lifecycle
+
+    fake = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
+        report_dir=None, status=SimpleNamespace(value='failed'))))
+    monkeypatch.setattr(execution_lifecycle, 'execution_lifecycle', fake)
+    result = await AutoTuneAgent()._run_iteration(str(jmx_file),
+        {'concurrency': 9, 'ramp_up': 2, 'duration': 30, 'think_time': 20},
+        AutoTuneConfig(cooldown_between_runs=0), 1)
+    assert not (result.error or '').startswith('Failed to update JMX'), result.error
+    fake.execute.assert_awaited_once()
+    assert fake.execute.await_args.args[0] == str(jmx_file)
+    assert fake.execute.await_args.args[1].startswith('autotune_1_')
+    nodes = list(walk(parse_jmx(str(jmx_file))))
+    props = next(n['properties'] for n in nodes if n.get('testclass') == 'ThreadGroup')
+    assert props['ThreadGroup.num_threads'] == '9'
+    assert props['ThreadGroup.duration'] == '30'
+    assert any(n.get('properties', {}).get('ConstantTimer.delay') == '20' for n in nodes)
+
+
+def test_selfheal_reads_and_updates_dict_extractor_properties():
+    from app.services.ai.agents.selfheal_agent import SelfHealAgent, ExtractionFix
+
+    tree = {'testclass': 'JSONPostProcessor', 'properties': {
+        'JSONPostProcessor.referenceNames': 'token',
+        'JSONPostProcessor.jsonPathExprs': '$.token'}, 'children': []}
+    agent = SelfHealAgent()
+    assert agent._find_extractions(tree)[0]['expression'] == '$.token'
+    agent._apply_fixes(tree, [ExtractionFix('$.token', '$.data.token', 'token', 1, 'json_path')])
+    assert tree['properties']['JSONPostProcessor.jsonPathExprs'] == '$.data.token'

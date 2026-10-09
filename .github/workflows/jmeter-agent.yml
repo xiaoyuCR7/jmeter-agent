@@ -1,0 +1,48 @@
+# Execute reviewed, registered plans; this example does not invent tests via LLM.
+# Secrets: JMETER_AGENT_URL, JMETER_AGENT_TOKEN (read/execute permissions).
+# Variables: JMETER_SMOKE_PLAN_ID, JMETER_FULL_PLAN_ID, JMETER_PROJECT_ID.
+# Optional: JMETER_BASELINE_EXECUTION_ID enables a strict regression gate.
+name: JMeter Performance Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  AGENT_URL: ${{ secrets.JMETER_AGENT_URL }}
+  AGENT_TOKEN: ${{ secrets.JMETER_AGENT_TOKEN }}
+  AGENT_PROJECT_ID: ${{ vars.JMETER_PROJECT_ID }}
+  AGENT_BASELINE_EXECUTION_ID: ${{ vars.JMETER_BASELINE_EXECUTION_ID }}
+
+jobs:
+  performance-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run reviewed plan and require SLA pass
+        if: github.event_name != 'schedule'
+        env:
+          AGENT_PLAN_ID: ${{ github.event_name == 'pull_request' && vars.JMETER_SMOKE_PLAN_ID || vars.JMETER_FULL_PLAN_ID }}
+        run: python .github/scripts/performance_gate.py --timeout 3300
+      - name: Require stable nightly drift
+        if: github.event_name == 'schedule'
+        run: python .github/scripts/performance_gate.py --mode drift
+      - name: Preserve actual JTL and JSON reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-evidence
+          path: performance-artifacts/
+          if-no-files-found: error

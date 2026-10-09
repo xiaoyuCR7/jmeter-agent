@@ -1,0 +1,1080 @@
+/* ============================================
+   Tavily Design System Theme
+   Warm cream background + #2677FF primary + clean minimal style
+   ============================================ */
+
+:root {
+  /* ── Primary blue palette (Tavily Blue #2677FF) ── */
+  --tavily-primary: #2677FF;
+  --tavily-primary-light: #5B93FF;
+  --tavily-primary-dark: #1A5ED4;
+  --tavily-primary-glow: rgba(38, 119, 255, 0.15);
+  --tavily-primary-bg: rgba(38, 119, 255, 0.08);
+
+  /* ── Accent colors ── */
+  --tavily-lavender: #817fff;
+  --tavily-light-blue: #aaf2fc;
+  --tavily-turquoise: #79deeb;
+  --tavily-pink: #f49eff;
+  --tavily-red: #ff272d;
+  --tavily-yellow: #ffc753;
+  --tavily-orange: #ff7300;
+
+  /* ── Glass tokens (macOS / iOS frosted glass) ── */
+  --glass-blur-sm: 10px;
+  --glass-blur-md: 14px;
+  --glass-blur-lg: 18px;
+
+  --glass-radius-sm: var(--radius-sm);
+  --glass-radius-md: var(--radius-md);
+  --glass-radius-lg: var(--radius-lg);
+
+  --glass-bg-page: #fefcf5;
+  --glass-bg-gradient: linear-gradient(135deg, #fefcf5 0%, #f3efe6 100%);
+  --glass-bg-panel: rgba(255, 255, 255, 0.55);
+  --glass-bg-header: rgba(255, 255, 255, 0.65);
+  --glass-bg-card: rgba(255, 255, 255, 0.55);
+  --glass-bg-sidebar: rgba(255, 255, 255, 0.50);
+  --glass-bg-overlay: rgba(255, 255, 255, 0.70);
+  --glass-bg-input: rgba(255, 255, 255, 0.40);
+  --glass-bg-code: rgba(255, 255, 255, 0.30);
+  --glass-bg-card-hover: rgba(255, 255, 255, 0.45);
+
+  --glass-border: rgba(255, 255, 255, 0.65);
+  --glass-border-subtle: rgba(255, 255, 255, 0.40);
+  --glass-border-highlight: rgba(255, 255, 255, 0.90);
+
+  --glass-shadow-sm: 0 1px 2px rgba(60, 58, 57, 0.04), 0 2px 8px rgba(60, 58, 57, 0.06);
+  --glass-shadow-md: 0 2px 4px rgba(60, 58, 57, 0.05), 0 8px 24px rgba(60, 58, 57, 0.08);
+  --glass-shadow-lg: 0 4px 8px rgba(60, 58, 57, 0.06), 0 16px 40px rgba(60, 58, 57, 0.10);
+
+  /* ── Background colors ── */
+  --tavily-bg: var(--glass-bg-page);
+  --tavily-bg-page: var(--glass-bg-page);
+  --tavily-bg-gradient: var(--glass-bg-gradient);
+  --tavily-bg-card: var(--glass-bg-card);
+  --tavily-bg-card-hover: var(--glass-bg-card-hover);
+  --tavily-bg-sidebar: var(--glass-bg-sidebar);
+  --tavily-bg-header: var(--glass-bg-header);
+  --tavily-bg-input: var(--glass-bg-input);
+  --tavily-bg-code: var(--glass-bg-code);
+  --tavily-bg-overlay: var(--glass-bg-overlay);
+
+  /* ── Text colors (warm charcoal #3c3a39) ── */
+  --tavily-text-primary: #3c3a39;
+  --tavily-text-regular: #3c3a39;
+  --tavily-text-secondary: #6b6560;
+  --tavily-text-muted: #8a837d;
+  --tavily-text-placeholder: #b8b3ae;
+
+  /* ── Border colors ── */
+  --tavily-border: var(--glass-border);
+  --tavily-border-light: var(--glass-border-subtle);
+  --tavily-border-blue: rgba(38, 119, 255, 0.25);
+
+  /* ── Gradients ── */
+  --tavily-gradient-primary: linear-gradient(135deg, #2677FF 0%, #5B93FF 100%);
+  --tavily-gradient-glow: linear-gradient(135deg, rgba(38,119,255,0.08) 0%, rgba(91,147,255,0.04) 100%);
+  --tavily-gradient-dark: linear-gradient(135deg, #1a1a2e 0%, #2d2d44 100%);
+
+  /* ── Shadows (softer, more subtle) ── */
+  --tavily-shadow-sm: var(--glass-shadow-sm);
+  --tavily-shadow-md: var(--glass-shadow-md);
+  --tavily-shadow-lg: var(--glass-shadow-lg);
+  --tavily-shadow-xl: 0 4px 8px rgba(11, 9, 7, 0.06), 0 24px 56px rgba(11, 9, 7, 0.12);
+
+  /* ── Unified radius system ──
+     sm: tags, badges, small buttons, inputs
+     md: normal buttons, dropdown menus
+     lg: cards, dialogs, panels (no sharp corners)
+     full: icon buttons, pills */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-full: 999px;
+
+  /* Legacy aliases — kept in sync with the unified scale */
+  --tavily-radius-sm: var(--radius-sm);
+  --tavily-radius-md: var(--radius-md);
+  --tavily-radius-lg: var(--radius-lg);
+  --tavily-radius-xl: var(--radius-lg);
+
+  /* ── Control-level radius tokens ── */
+  --tavily-radius-button: var(--radius-md);
+  --tavily-radius-tag: var(--radius-sm);
+  --tavily-radius-input: var(--radius-sm);
+
+  /* ── Spacing scale (card rhythm: 16px multiples) ── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+}
+
+/* ── Dark mode glass tokens ── */
+html.dark {
+  --glass-bg-page: #0f0f12;
+  --glass-bg-gradient: linear-gradient(135deg, #0f0f12 0%, #1c1c1e 100%);
+  --glass-bg-panel: rgba(40, 40, 44, 0.55);
+  --glass-bg-header: rgba(40, 40, 44, 0.65);
+  --glass-bg-card: rgba(40, 40, 44, 0.55);
+  --glass-bg-sidebar: rgba(40, 40, 44, 0.50);
+  --glass-bg-overlay: rgba(30, 30, 33, 0.75);
+  --glass-bg-input: rgba(255, 255, 255, 0.10);
+  --glass-bg-code: rgba(255, 255, 255, 0.08);
+  --glass-bg-card-hover: rgba(255, 255, 255, 0.08);
+
+  --glass-border: rgba(255, 255, 255, 0.10);
+  --glass-border-subtle: rgba(255, 255, 255, 0.06);
+  --glass-border-highlight: rgba(255, 255, 255, 0.18);
+
+  --glass-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.20), 0 2px 8px rgba(0, 0, 0, 0.24);
+  --glass-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.26), 0 8px 24px rgba(0, 0, 0, 0.30);
+  --glass-shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.32), 0 16px 40px rgba(0, 0, 0, 0.38);
+
+  --tavily-primary-bg: rgba(91, 147, 255, 0.20);
+  --tavily-primary-glow: rgba(91, 147, 255, 0.25);
+
+  --tavily-text-primary: #f5f5f7;
+  --tavily-text-regular: #f5f5f7;
+  --tavily-text-secondary: #a1a1a6;
+  --tavily-text-muted: #6e6e73;
+  --tavily-text-placeholder: #6e6e73;
+
+  --tavily-border-blue: rgba(91, 147, 255, 0.35);
+}
+
+/* Override Element Plus variables */
+:root {
+  --el-bg-color: var(--tavily-bg);
+  --el-bg-color-page: var(--tavily-bg-page);
+  --el-bg-color-overlay: var(--tavily-bg-card);
+  --el-text-color-primary: var(--tavily-text-primary);
+  --el-text-color-regular: var(--tavily-text-regular);
+  --el-text-color-secondary: var(--tavily-text-secondary);
+  --el-text-color-placeholder: var(--tavily-text-placeholder);
+  --el-border-color: var(--tavily-border);
+  --el-border-color-light: var(--tavily-border-light);
+  --el-border-color-lighter: var(--tavily-border-light);
+  --el-fill-color: var(--tavily-bg-card);
+  --el-fill-color-light: var(--tavily-bg-card-hover);
+  --el-fill-color-lighter: var(--tavily-bg-card-hover);
+  --el-fill-color-blank: var(--tavily-bg-card);
+  --el-fill-color-dark: var(--tavily-bg-sidebar);
+  --el-color-primary: var(--tavily-primary);
+  --el-color-primary-light-3: #5B93FF;
+  --el-color-primary-light-5: #7DAAFF;
+  --el-color-primary-light-7: #A0C2FF;
+  --el-color-primary-light-8: #C3D9FF;
+  --el-color-primary-light-9: #E8F1FF;
+  --el-color-primary-dark-2: #1A5ED4;
+  --el-box-shadow-light: var(--tavily-shadow-sm);
+  --el-box-shadow: var(--tavily-shadow-md);
+  --el-box-shadow-dark: var(--tavily-shadow-lg);
+  --el-mask-color: rgba(11, 9, 7, 0.4);
+  /* Framework-level radius + card rhythm so unstyled EP components follow the unified scale */
+  --el-border-radius-base: var(--radius-sm);
+  --el-border-radius-small: var(--radius-sm);
+  --el-border-radius-round: var(--radius-full);
+  --el-card-border-radius: var(--radius-lg);
+  --el-card-padding: 20px;
+  --el-messagebox-border-radius: var(--radius-lg);
+}
+
+html.dark {
+  --el-bg-color: var(--tavily-bg);
+  --el-bg-color-page: var(--tavily-bg-page);
+  --el-bg-color-overlay: var(--tavily-bg-card);
+  --el-text-color-primary: var(--tavily-text-primary);
+  --el-text-color-regular: var(--tavily-text-regular);
+  --el-text-color-secondary: var(--tavily-text-secondary);
+  --el-text-color-placeholder: var(--tavily-text-placeholder);
+  --el-border-color: var(--tavily-border);
+  --el-border-color-light: var(--tavily-border-light);
+  --el-border-color-lighter: var(--tavily-border-light);
+  --el-fill-color: var(--tavily-bg-card);
+  --el-fill-color-light: var(--tavily-bg-card-hover);
+  --el-fill-color-lighter: var(--tavily-bg-card-hover);
+  --el-fill-color-blank: var(--tavily-bg-card);
+  --el-fill-color-dark: var(--tavily-bg-sidebar);
+  --el-mask-color: rgba(15, 15, 18, 0.6);
+  --el-color-primary-light-9: rgba(38, 119, 255, 0.25);
+}
+
+/* ── Table styling ── */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--tavily-bg-sidebar);
+  --el-table-row-hover-bg-color: var(--tavily-bg-card-hover);
+  --el-table-border-color: var(--tavily-border);
+  width: 100%;
+  border-radius: var(--radius-lg);
+}
+
+.el-table th.el-table__cell {
+  background-color: var(--tavily-bg-sidebar) !important;
+  color: var(--tavily-text-secondary);
+  font-weight: 500;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.el-table td.el-table__cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Card styling ── */
+.el-card {
+  background: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border-light);
+  border-radius: var(--tavily-radius-lg);
+  box-shadow: var(--tavily-shadow-md);
+  backdrop-filter: blur(var(--glass-blur-md));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md));
+}
+
+.el-card__header {
+  border-bottom: 1px solid var(--tavily-border);
+  color: var(--tavily-text-primary);
+  font-weight: 500;
+}
+
+/* ── Input styling ── */
+.el-input__wrapper,
+.el-textarea__inner {
+  background-color: var(--tavily-bg-input) !important;
+  border-radius: var(--tavily-radius-input) !important;
+  box-shadow: 0 0 0 1px var(--tavily-border) inset !important;
+  transition: box-shadow 0.2s ease;
+  backdrop-filter: blur(var(--glass-blur-sm));
+  -webkit-backdrop-filter: blur(var(--glass-blur-sm));
+}
+
+.el-input__wrapper:hover,
+.el-textarea__inner:hover {
+  box-shadow: 0 0 0 1px var(--tavily-border-blue) inset !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-textarea__inner:focus,
+.el-textarea__inner.is-focus {
+  box-shadow: 0 0 0 2px var(--tavily-primary) inset !important;
+}
+
+/* ── Select dropdown ── */
+.el-select-dropdown {
+  background-color: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--tavily-shadow-lg);
+  backdrop-filter: blur(var(--glass-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+}
+
+.el-select-dropdown__item:hover {
+  background-color: var(--tavily-bg-card-hover) !important;
+}
+
+.el-select-dropdown__item.selected {
+  background-color: var(--tavily-primary-bg) !important;
+  color: var(--tavily-primary-dark) !important;
+}
+
+html.dark .el-select-dropdown__item.selected {
+  color: var(--tavily-primary-light) !important;
+}
+
+/* ── Dialog styling ── */
+.el-dialog {
+  background-color: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border);
+  border-radius: var(--tavily-radius-xl);
+  box-shadow: var(--tavily-shadow-xl);
+  backdrop-filter: blur(var(--glass-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+}
+
+/* ── Tag styling ── */
+.el-tag {
+  border-radius: var(--tavily-radius-tag);
+  font-weight: 500;
+}
+
+.el-tag--success {
+  --el-tag-bg-color: rgba(22, 163, 74, 0.08);
+  --el-tag-border-color: rgba(22, 163, 74, 0.15);
+  --el-tag-text-color: #15803D;
+}
+
+.el-tag--warning {
+  --el-tag-bg-color: rgba(245, 158, 11, 0.08);
+  --el-tag-border-color: rgba(245, 158, 11, 0.15);
+  --el-tag-text-color: #B45309;
+}
+
+.el-tag--danger {
+  --el-tag-bg-color: rgba(220, 38, 38, 0.08);
+  --el-tag-border-color: rgba(220, 38, 38, 0.15);
+  --el-tag-text-color: #B91C1C;
+}
+
+.el-tag--info {
+  --el-tag-bg-color: rgba(107, 101, 96, 0.08);
+  --el-tag-border-color: rgba(107, 101, 96, 0.15);
+  --el-tag-text-color: #6b6560;
+}
+
+html.dark .el-tag--success {
+  --el-tag-bg-color: rgba(22, 163, 74, 0.18);
+  --el-tag-border-color: rgba(22, 163, 74, 0.30);
+  --el-tag-text-color: #4ade80;
+}
+
+html.dark .el-tag--warning {
+  --el-tag-bg-color: rgba(245, 158, 11, 0.18);
+  --el-tag-border-color: rgba(245, 158, 11, 0.30);
+  --el-tag-text-color: #fbbf24;
+}
+
+html.dark .el-tag--danger {
+  --el-tag-bg-color: rgba(220, 38, 38, 0.18);
+  --el-tag-border-color: rgba(220, 38, 38, 0.30);
+  --el-tag-text-color: #f87171;
+}
+
+html.dark .el-tag--info {
+  --el-tag-bg-color: rgba(255, 255, 255, 0.10);
+  --el-tag-border-color: rgba(255, 255, 255, 0.15);
+  --el-tag-text-color: #a1a1a6;
+}
+
+/* ── Primary button ── */
+.el-button--primary {
+  background: var(--tavily-primary);
+  border: none;
+  border-radius: var(--tavily-radius-button);
+  box-shadow: 0 2px 8px rgba(38, 119, 255, 0.25);
+  color: #fff;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.el-button--primary:not(.is-disabled):not(.is-loading):hover {
+  background: var(--tavily-primary-dark);
+  box-shadow: 0 4px 14px rgba(38, 119, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+.el-button--primary:active {
+  background: #154BB0;
+  transform: translateY(0);
+}
+
+.el-button--success {
+  background: #16A34A;
+  border: none;
+  border-radius: var(--tavily-radius-button);
+  box-shadow: 0 2px 8px rgba(22, 163, 74, 0.25);
+  color: #fff;
+  font-weight: 500;
+}
+
+.el-button--success:not(.is-disabled):not(.is-loading):hover {
+  background: #15803D;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.35);
+  transform: translateY(-1px);
+}
+
+.el-button--danger {
+  background: #DC2626;
+  border: none;
+  border-radius: var(--tavily-radius-button);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25);
+  color: #fff;
+  font-weight: 500;
+}
+
+.el-button--danger:not(.is-disabled):not(.is-loading):hover {
+  background: #B91C1C;
+  box-shadow: 0 4px 14px rgba(220, 38, 38, 0.35);
+  transform: translateY(-1px);
+}
+
+.el-button--default {
+  border-radius: var(--tavily-radius-button);
+  font-weight: 500;
+}
+
+.el-button {
+  border-radius: var(--tavily-radius-button);
+}
+
+/* Default button: subtle lift on hover */
+.el-button--default:not(.is-disabled):not(.is-loading):hover {
+  transform: translateY(-1px);
+  box-shadow: var(--tavily-shadow-sm);
+}
+
+/* Disabled: dimmed, no interaction feedback */
+.el-button.is-disabled,
+.el-button.is-disabled:hover,
+.el-button.is-disabled:active,
+.el-button:disabled,
+.el-button:disabled:hover,
+.el-button:disabled:active {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Loading: spinner shown, block further interaction */
+.el-button.is-loading,
+.el-button.is-loading:hover,
+.el-button.is-loading:active {
+  pointer-events: none;
+  opacity: 0.8;
+  transform: none;
+}
+
+/* ── Menu / sidebar navigation ── */
+.el-menu {
+  background-color: transparent;
+  border-right: none;
+}
+
+.el-menu-item {
+  color: var(--tavily-text-secondary);
+  border-radius: var(--tavily-radius-md);
+  margin: 2px 10px;
+  height: 42px;
+  line-height: 42px;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.15s ease;
+}
+
+.el-menu-item:hover {
+  background-color: var(--tavily-primary-bg) !important;
+  color: var(--tavily-text-primary) !important;
+}
+
+.el-menu-item.is-active {
+  background: var(--tavily-primary) !important;
+  color: #fff !important;
+  box-shadow: 0 2px 8px rgba(38, 119, 255, 0.3);
+  font-weight: 500;
+}
+
+/* ── Tree ── */
+.el-tree {
+  background-color: transparent;
+  color: var(--tavily-text-regular);
+}
+
+.el-tree-node__content:hover {
+  background-color: var(--tavily-bg-card-hover);
+}
+
+/* ── Pagination ── */
+.el-pagination {
+  --el-pagination-button-bg-color: var(--tavily-bg-card);
+  --el-pagination-hover-color: var(--tavily-primary-dark);
+}
+
+.el-pagination .btn-prev,
+.el-pagination .btn-next {
+  border-radius: var(--radius-sm) !important;
+}
+
+.el-pager li {
+  border-radius: var(--radius-sm) !important;
+}
+
+/* ── Loading mask ── */
+.el-loading-mask {
+  background-color: var(--tavily-bg-overlay);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ── Alert ── */
+.el-alert--info.is-light {
+  background-color: #E8F1FF;
+  border: 1px solid rgba(38, 119, 255, 0.15);
+  color: var(--tavily-primary-dark);
+  border-radius: var(--radius-md);
+}
+
+.el-alert--success.is-light {
+  background-color: #F0FDF4;
+  border: 1px solid rgba(22, 163, 74, 0.15);
+  color: #15803D;
+  border-radius: var(--radius-md);
+}
+
+.el-alert--warning.is-light {
+  background-color: #FFFBEB;
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  color: #B45309;
+  border-radius: var(--radius-md);
+}
+
+.el-alert--error.is-light {
+  background-color: #FEF2F2;
+  border: 1px solid rgba(220, 38, 38, 0.15);
+  color: #B91C1C;
+  border-radius: var(--radius-md);
+}
+
+html.dark .el-alert--info.is-light {
+  background-color: rgba(38, 119, 255, 0.15);
+  border-color: rgba(38, 119, 255, 0.25);
+  color: var(--tavily-primary-light);
+}
+
+html.dark .el-alert--success.is-light {
+  background-color: rgba(22, 163, 74, 0.15);
+  border-color: rgba(22, 163, 74, 0.25);
+  color: #4ade80;
+}
+
+html.dark .el-alert--warning.is-light {
+  background-color: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.25);
+  color: #fbbf24;
+}
+
+html.dark .el-alert--error.is-light {
+  background-color: rgba(220, 38, 38, 0.15);
+  border-color: rgba(220, 38, 38, 0.25);
+  color: #f87171;
+}
+
+/* ── Form ── */
+.el-form-item__label {
+  color: var(--tavily-text-secondary);
+  font-weight: 500;
+}
+
+/* ── Switch ── */
+.el-switch.is-checked .el-switch__core {
+  background-color: var(--tavily-primary);
+  border-color: var(--tavily-primary);
+}
+
+/* ── Divider ── */
+.el-divider {
+  border-color: var(--tavily-border);
+}
+
+/* ── Message box ── */
+.el-message-box {
+  background-color: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border);
+  border-radius: var(--tavily-radius-xl);
+  backdrop-filter: blur(var(--glass-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+}
+
+/* ── Dropdown ── */
+.el-dropdown__popper {
+  background-color: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--tavily-shadow-lg);
+  backdrop-filter: blur(var(--glass-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+}
+
+/* ── Popover ── */
+.el-popover {
+  background-color: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(var(--glass-blur-lg));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg));
+}
+
+/* ── Tabs ── */
+.el-tabs__item {
+  color: var(--tavily-text-secondary);
+  font-weight: 500;
+}
+
+.el-tabs__item.is-active {
+  color: var(--tavily-primary-dark);
+}
+
+html.dark .el-tabs__item.is-active {
+  color: var(--tavily-primary-light);
+}
+
+.el-tabs__active-bar {
+  background-color: var(--tavily-primary);
+}
+
+/* ── Progress ── */
+.el-progress-bar__outer {
+  background-color: var(--tavily-bg-card-hover);
+  border-radius: var(--radius-full);
+}
+
+.el-progress-bar__inner {
+  border-radius: var(--radius-full);
+}
+
+/* ── Tooltip ── */
+.el-popper.is-dark {
+  background: #3c3a39;
+  border: none;
+  color: #fffcf6;
+  border-radius: var(--tavily-radius-sm);
+}
+
+html.dark .el-popper.is-dark {
+  background: #2c2c30;
+  color: #f5f5f7;
+}
+
+/* ── Steps ── */
+.el-step__title.is-process {
+  color: var(--tavily-primary-dark);
+  font-weight: 500;
+}
+
+html.dark .el-step__title.is-process {
+  color: var(--tavily-primary-light);
+}
+
+.el-step__head.is-process {
+  color: var(--tavily-primary);
+  border-color: var(--tavily-primary);
+}
+
+.el-step__head.is-success {
+  color: var(--tavily-primary);
+  border-color: var(--tavily-primary);
+}
+
+.el-step__title.is-success {
+  color: var(--tavily-primary-dark);
+  font-weight: 500;
+}
+
+html.dark .el-step__title.is-success {
+  color: var(--tavily-primary-light);
+}
+
+.el-step__title.is-wait {
+  color: var(--tavily-text-muted);
+}
+
+/* ── Input number ── */
+.el-input-number {
+  .el-input__wrapper {
+    border-radius: var(--tavily-radius-md) !important;
+  }
+}
+
+/* ── Breadcrumb ── */
+.el-breadcrumb__item {
+  font-weight: 500;
+}
+
+.el-breadcrumb__inner.is-link:hover {
+  color: var(--tavily-primary);
+}
+
+/* ── Layout-level glass surfaces ── */
+.el-header {
+  background: var(--tavily-bg-header);
+  backdrop-filter: blur(var(--glass-blur-md));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md));
+}
+
+.el-aside {
+  background: var(--tavily-bg-sidebar);
+  backdrop-filter: blur(var(--glass-blur-md));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md));
+}
+
+/* ── Utility glass class ── */
+.glass {
+  background: var(--tavily-bg-card);
+  border: 1px solid var(--tavily-border);
+  border-radius: var(--tavily-radius-lg);
+  box-shadow: var(--tavily-shadow-md);
+  backdrop-filter: blur(var(--glass-blur-md));
+  -webkit-backdrop-filter: blur(var(--glass-blur-md));
+}
+
+/* ── Reduced motion / accessibility fallback ── */
+@media (prefers-reduced-transparency: reduce) {
+  .el-card,
+  .el-dialog,
+  .el-select-dropdown,
+  .el-dropdown__popper,
+  .el-popover,
+  .el-message-box,
+  .el-header,
+  .el-aside,
+  .el-input__wrapper,
+  .el-textarea__inner {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ============================================
+   Motion & Micro-interactions
+   Apple-style springy feel
+   ============================================ */
+
+:root {
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 0.15s;
+  --duration-normal: 0.25s;
+  --duration-slow: 0.4s;
+  /* Layout: header height + content padding (top + bottom) for full-height page calcs */
+  --layout-offset: 132px;
+  @media (max-width: 768px) { --layout-offset: 96px; }
+  @media (min-width: 769px) and (max-width: 1023px) { --layout-offset: 108px; }
+}
+
+/* Smooth theme transitions on surfaces that change color */
+body,
+.el-card,
+.el-button,
+.el-input__wrapper,
+.el-textarea__inner,
+.el-menu-item,
+.el-header,
+.el-aside,
+.el-dialog,
+.el-select-dropdown,
+.el-dropdown__popper,
+.el-popover,
+.el-message-box,
+.el-tag,
+.el-tabs__item,
+.el-breadcrumb__inner,
+.collapse-btn,
+.logo-icon {
+  transition:
+    background-color var(--duration-normal) var(--ease-smooth),
+    color var(--duration-normal) var(--ease-smooth),
+    border-color var(--duration-normal) var(--ease-smooth),
+    box-shadow var(--duration-normal) var(--ease-smooth);
+}
+
+/* Buttons: press-and-pop */
+.el-button {
+  transition:
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-smooth),
+    background-color var(--duration-normal) var(--ease-smooth),
+    border-color var(--duration-normal) var(--ease-smooth);
+}
+
+.el-button:not(:disabled):not(.is-disabled):not(.is-loading):active {
+  transform: scale(0.96);
+}
+
+/* Cards: lift on hover */
+.el-card {
+  transition:
+    transform var(--duration-normal) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-smooth),
+    background-color var(--duration-normal) var(--ease-smooth),
+    border-color var(--duration-normal) var(--ease-smooth);
+}
+
+.el-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--tavily-shadow-lg);
+}
+
+.el-card:active {
+  transform: scale(0.995) translateY(-1px);
+}
+
+/* Menu items: subtle push */
+.el-menu-item {
+  transition:
+    background-color var(--duration-fast) var(--ease-smooth),
+    color var(--duration-fast) var(--ease-smooth),
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-fast) var(--ease-smooth);
+}
+
+.el-menu-item:not(.is-active):hover {
+  transform: translateX(2px);
+}
+
+.el-menu-item.is-active {
+  transition:
+    background-color var(--duration-fast) var(--ease-smooth),
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-fast) var(--ease-smooth);
+}
+
+.el-menu-item.is-active:active {
+  transform: scale(0.97);
+}
+
+/* Inputs: gentle focus pulse */
+.el-input__wrapper,
+.el-textarea__inner {
+  transition:
+    box-shadow 0.2s ease,
+    background-color var(--duration-normal) var(--ease-smooth),
+    border-color var(--duration-normal) var(--ease-smooth),
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.el-input__wrapper:focus-within,
+.el-textarea__inner:focus-within {
+  transform: translateY(-1px);
+}
+
+/* Links / text buttons */
+.el-button.is-link,
+.el-button.is-text,
+.el-breadcrumb__inner.is-link {
+  transition:
+    color var(--duration-fast) var(--ease-smooth),
+    transform var(--duration-fast) var(--ease-spring);
+}
+
+.el-button.is-link:active,
+.el-button.is-text:active {
+  transform: scale(0.96);
+}
+
+/* Tags: pop */
+.el-tag {
+  transition:
+    transform var(--duration-fast) var(--ease-spring),
+    box-shadow var(--duration-normal) var(--ease-smooth),
+    background-color var(--duration-normal) var(--ease-smooth);
+}
+
+.el-tag:hover {
+  transform: translateY(-1px);
+}
+
+/* Utility entrance animation */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-in {
+  animation: fadeUp 0.5s var(--ease-spring) both;
+}
+
+/* ============================================
+   Responsive Design Breakpoints
+   ============================================ */
+:root {
+  --bp-mobile: 768px;
+  --bp-tablet: 1024px;
+  --bp-desktop: 1200px;
+}
+
+/* Opt-in responsive stacking helpers.
+   Previously these rules targeted ALL Element Plus components globally with
+   !important, which broke per-component responsive props, tables, dialogs,
+   and inline action buttons. Use these helper classes on parent containers
+   where stacking is actually desired. */
+@media (max-width: 768px) {
+  .stack-xs .el-col {
+    width: 100% !important;
+    margin-bottom: 12px;
+  }
+
+  .stack-xs .el-row {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+
+    &::before,
+    &::after {
+      display: none;
+    }
+  }
+
+  .form-vertical-xs .el-form-item {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+  }
+
+  .form-vertical-xs .el-form-item__label {
+    width: auto !important;
+    margin-bottom: 6px !important;
+    text-align: left !important;
+  }
+
+  .form-vertical-xs .el-form-item__content {
+    width: 100% !important;
+  }
+
+  .btn-block-xs .el-button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .card-stack-xs .el-card {
+    margin-bottom: 16px !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .stack-sm .el-col {
+    width: 50% !important;
+    margin-bottom: 12px;
+  }
+
+  .form-vertical-sm .el-form-item__label {
+    width: auto !important;
+    margin-bottom: 4px;
+  }
+}
+
+/* Allow specific table cells to wrap instead of nowrap */
+.el-table__cell--wrap {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Allow table cell text to wrap naturally by default */
+.cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Allow specific table cells to wrap */
+.cell--wrap {
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+/* Utility visibility / width classes */
+@media (max-width: 768px) {
+  .mobile-full-width {
+    width: 100% !important;
+  }
+
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  .mobile-center {
+    text-align: center !important;
+  }
+
+  .mobile-block {
+    display: block !important;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .tablet-full-width {
+    width: 100% !important;
+  }
+
+  .tablet-hidden {
+    display: none !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  .desktop-hidden {
+    display: none !important;
+  }
+}
+
+/* Reduced motion: disable animations */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* ============================================
+   Typography Hierarchy
+   Three clear tiers: headings / body / auxiliary
+   ============================================ */
+h1,
+.h1 {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--tavily-text-primary);
+}
+
+h2,
+.h2 {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--tavily-text-primary);
+}
+
+h3,
+.h3 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--tavily-text-primary);
+}
+
+h4,
+.h4 {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--tavily-text-primary);
+}
+
+p {
+  line-height: 1.6;
+}
+
+/* Auxiliary / secondary text tier */
+.text-secondary {
+  color: var(--tavily-text-secondary);
+  font-size: 13px;
+}
+
+.text-muted {
+  color: var(--tavily-text-muted);
+  font-size: 12px;
+}
+
+/* Links: consistent 0.2s feedback */
+a {
+  transition: color var(--duration-fast) var(--ease-smooth);
+}

@@ -1,0 +1,91 @@
+<template>
+  <div class="cookies-editor">
+    <el-form-item :label="t('editor.cookies.title')">
+      <div class="table-scroll">
+      <el-table :data="cookies" border size="small" style="width: 100%">
+        <el-table-column :label="t('editor.cookies.name')" min-width="120">
+          <template #default="{ $index }">
+            <el-input v-model="cookies[$index]['Cookie.name']" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('editor.cookies.value')" min-width="140">
+          <template #default="{ $index }">
+            <FunctionInput v-model="cookies[$index]['Cookie.value']" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('editor.cookies.domain')" min-width="120">
+          <template #default="{ $index }">
+            <el-input v-model="cookies[$index]['Cookie.domain']" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column :label="t('editor.cookies.path')" width="100">
+          <template #default="{ $index }">
+            <el-input v-model="cookies[$index]['Cookie.path']" size="small" />
+          </template>
+        </el-table-column>
+        <el-table-column width="70">
+          <template #default="{ $index }">
+            <el-button type="danger" size="small" text @click="removeCookie($index)">{{ t('editor.common.delete') }}</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      </div>
+      <el-button type="primary" text style="margin-top: 8px" @click="addCookie">
+        <el-icon><Plus /></el-icon> {{ t('editor.cookies.add') }}
+      </el-button>
+    </el-form-item>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useI18n } from '@/composables/useI18n'
+import FunctionInput from './FunctionInput.vue'
+
+const { t } = useI18n()
+
+const props = defineProps<{ modelValue: Record<string, any> }>()
+const emit = defineEmits<{ 'update:modelValue': [value: Record<string, any>] }>()
+
+const cookies = computed({
+  get() {
+    const list = props.modelValue['CookieManager.cookies']
+    if (!Array.isArray(list)) return []
+    return list.map((item: any) => ({
+      _elementType: 'Cookie',
+      _name: item._name || item['Cookie.name'] || '',
+      'Cookie.name': item['Cookie.name'] || '',
+      'Cookie.value': item['Cookie.value'] || '',
+      'Cookie.domain': item['Cookie.domain'] || '',
+      'Cookie.path': item['Cookie.path'] || '/',
+      'Cookie.secure': item['Cookie.secure'] || false,
+      'Cookie.expires': item['Cookie.expires'] || '0',
+    }))
+  },
+  set(val) {
+    emit('update:modelValue', { ...props.modelValue, 'CookieManager.cookies': val })
+  },
+})
+
+function addCookie() {
+  cookies.value = [
+    ...cookies.value,
+    {
+      _elementType: 'Cookie',
+      _name: '',
+      'Cookie.name': '',
+      'Cookie.value': '',
+      'Cookie.domain': '',
+      'Cookie.path': '/',
+      'Cookie.secure': false,
+      'Cookie.expires': '0',
+    },
+  ]
+}
+
+function removeCookie(index: number) {
+  const list = [...cookies.value]
+  list.splice(index, 1)
+  cookies.value = list
+}
+</script>

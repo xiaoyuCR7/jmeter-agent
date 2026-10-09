@@ -1,0 +1,421 @@
+"""ML-powered anomaly detection and metrics correlation.
+
+Uses lightweight statistical methods (no heavy ML deps):
+- Z-score for spike detection
+- IQR (Interquartile Range) for outlier detection
+- Moving average for trend analysis
+- Percentile-based anomaly scoring
+"""
+
+import math
+import logging
+from typing import Optional
+from dataclasses import dataclass, field
+from collections import defaultdict
+
+from app.core.time import utc_now_naive
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class Anomaly:
+    """A detected performance anomaly."""
+    metric: str
+    value: float
+    expected_range: tuple[float, float]  # (min, max) expected
+    severity: str  # "low" | "medium" | "high"
+    timestamp: Optional[str] = None
+    description: str = ""
+
+
+@dataclass
+class AnomalyReport:
+    """Result of anomaly detection on a test report."""
+    total_anomalies: int
+    anomalies: list[Anomaly] = field(default_factory=list)
+    health_score: float = 100.0  # 0-100, higher = healthier
+    summary: str = ""
+
+    def model_dump(self) -> dict:
+        return {
+            "total_anomalies": self.total_anomalies,
+            "health_score": round(self.health_score, 1),
+            "anomalies": [
+                {"metric": a.metric, "value": a.value,
+                 "expected_range": tuple(v if math.isfinite(v) else None for v in a.expected_range),
+                 "severity": a.severity,
+                 "description": a.description}
+                for a in self.anomalies
+            ],
+            "summary": self.summary,
+        }
+
+
+class MLAnomalyDetector:
+    """Statistical anomaly detection for test results.
+
+    Usage:
+        detector = MLAnomalyDetector()
+        report = detector.analyze_timeline(timeline_segments)
+        # Or with baseline comparison:
+        report = detector.compare_to_baseline(current_metrics, baseline_metrics)
+    """
+
+    def __init__(self, sensitivity: float = 2.0):
+        """
+        Args:
+            sensitivity: Z-score threshold (lower = more sensitive). Default 2.0.
+        """
+        self.sensitivity = sensitivity
+
+    def analyze_timeline(self, timeline_segments: list) -> AnomalyReport:
+        """Detect anomalies in a test's timeline data."""
+        if not timeline_segments:
+            return AnomalyReport(total_anomalies=0, health_score=100, summary="No data")
+
+        anomalies = []
+
+        # Extract metric series
+        response_times = []
+        error_rates = []
+        throughputs = []
+
+        for seg in timeline_segments:
+            if hasattr(seg, 'avg_response_time'):
+                val = seg.avg_response_time
+            elif isinstance(seg, dict):
+                val = seg.get('avg_response_time', 0) or seg.get('avg', 0)
+            else:
+                val = 0
+            response_times.append(float(val))
+
+            if hasattr(seg, 'error_rate'):
+                val = seg.error_rate
+            elif isinstance(seg, dict):
+                val = seg.get('error_rate', 0)
+            else:
+                val = 0
+            error_rates.append(float(val))
+
+            if hasattr(seg, 'throughput'):
+                val = seg.throughput
+            elif isinstance(seg, dict):
+                val = seg.get('throughput', 0)
+            else:
+                val = 0
+            throughputs.append(float(val))
+
+        # Response time anomalies
+        rt_anomalies = self._detect_spikes(response_times, "response_time")
+        anomalies.extend(rt_anomalies)
+
+        # Error rate anomalies
+        err_anomalies = self._detect_spikes(error_rates, "error_rate")
+        anomalies.extend(err_anomalies)
+
+        # Throughput drops
+        thr_anomalies = self._detect_drops(throughputs, "throughput")
+        anomalies.extend(thr_anomalies)
+
+        # Response time trend divergence
+        trend_anomalies = self._detect_trend_divergence(response_times)
+        anomalies.extend(trend_anomalies)
+
+        # Calculate health score
+        health_score = self._calculate_health_score(
+            response_times, error_rates, throughputs, anomalies
+        )
+
+        # Build summary
+        severity_counts = defaultdict(int)
+        for a in anomalies:
+            severity_counts[a.severity] += 1
+
+        summary_parts = []
+        if severity_counts["high"] > 0:
+            summary_parts.append(f"{severity_counts['high']} critical anomalies detected")
+        if severity_counts["medium"] > 0:
+            summary_parts.append(f"{severity_counts['medium']} warnings")
+        if not summary_parts:
+            summary_parts.append("No significant anomalies detected")
+
+        return AnomalyReport(
+            total_anomalies=len(anomalies),
+            anomalies=anomalies,
+            health_score=health_score,
+            summary=" | ".join(summary_parts),
+        )
+
+    def compare_to_baseline(self, current: dict, baseline: dict) -> AnomalyReport:
+        """Compare current metrics to a baseline and flag anomalies."""
+        anomalies = []
+        metrics_to_check = [
+            ("avg_response_time", "ms", "lt"),
+            ("p95_response_time", "ms", "lt"),
+            ("p99_response_time", "ms", "lt"),
+            ("error_rate", "%", "lt"),
+            ("throughput", "RPS", "gt"),
+        ]
+
+        compared = 0
+        for metric, unit, direction in metrics_to_check:
+            try:
+                curr_val = float(current[metric])
+                base_val = float(baseline[metric])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if not math.isfinite(curr_val) or not math.isfinite(base_val):
+                continue
+
+            if base_val == 0:
+                continue
+            compared += 1
+
+            change_pct = (curr_val - base_val) / base_val * 100
+
+            if direction == "lt" and change_pct > 20:
+                severity = "high" if change_pct > 50 else "medium"
+                anomalies.append(Anomaly(
+                    metric=metric,
+                    value=round(float(curr_val), 2),
+                    expected_range=(0, round(float(base_val) * 1.2, 2)),
+                    severity=severity,
+                    description=f"{metric}: {curr_val}{unit} vs baseline {base_val}{unit} ({change_pct:+.1f}%)",
+                ))
+            elif direction == "gt" and change_pct < -20:
+                severity = "high" if change_pct < -50 else "medium"
+                anomalies.append(Anomaly(
+                    metric=metric,
+                    value=round(float(curr_val), 2),
+                    expected_range=(round(float(base_val) * 0.8, 2), float("inf")),
+                    severity=severity,
+                    description=f"{metric}: {curr_val}{unit} dropped from baseline {base_val}{unit} ({change_pct:+.1f}%)",
+                ))
+
+        health_score = max(0, 100 - len(anomalies) * 15)
+        summary = f"Compared to baseline: {len(anomalies)} deviations found" if anomalies else "Matches baseline — no deviations"
+        if not compared:
+            summary = "Insufficient comparable baseline metrics"
+
+        return AnomalyReport(
+            total_anomalies=len(anomalies),
+            anomalies=anomalies,
+            health_score=health_score,
+            summary=summary,
+        )
+
+    # ── Internal detection methods ──────────────────────
+
+    def _detect_spikes(self, values: list[float], metric: str) -> list[Anomaly]:
+        """Detect value spikes using Z-score method."""
+        if len(values) < 3:
+            return []
+        anomalies = []
+        mean = sum(values) / len(values)
+        std = self._stddev(values, mean)
+        if std == 0:
+            return []
+
+        for i, val in enumerate(values):
+            z = abs(val - mean) / std
+            if z > self.sensitivity:
+                severity = "high" if z > self.sensitivity * 1.5 else "medium"
+                anomalies.append(Anomaly(
+                    metric=metric,
+                    value=val,
+                    expected_range=(max(0, mean - self.sensitivity * std),
+                                    mean + self.sensitivity * std),
+                    severity=severity,
+                    description=f"{metric} spike at segment {i}: {val:.2f} (z-score={z:.1f})",
+                ))
+        return anomalies
+
+    def _detect_drops(self, values: list[float], metric: str) -> list[Anomaly]:
+        """Detect significant drops (for throughput, etc.)."""
+        if len(values) < 3:
+            return []
+        anomalies = []
+        mean = sum(values) / len(values)
+        for i, val in enumerate(values):
+            if mean > 0 and val < mean * 0.5:
+                anomalies.append(Anomaly(
+                    metric=metric,
+                    value=val,
+                    expected_range=(mean * 0.5, float("inf")),
+                    severity="medium",
+                    description=f"{metric} drop at segment {i}: {val:.2f} (mean={mean:.2f})",
+                ))
+        return anomalies
+
+    def _detect_trend_divergence(self, values: list[float]) -> list[Anomaly]:
+        """Detect if response times show a steadily worsening trend."""
+        if len(values) < 5:
+            return []
+        # Simple linear regression slope
+        n = len(values)
+        x_mean = (n - 1) / 2
+        y_mean = sum(values) / n
+        numerator = sum((i - x_mean) * (values[i] - y_mean) for i in range(n))
+        denominator = sum((i - x_mean) ** 2 for i in range(n))
+        if denominator == 0:
+            return []
+
+        slope = numerator / denominator
+        y_start = y_mean - slope * x_mean
+
+        if y_start > 0 and slope > 0:
+            change_pct = (slope * n) / y_start * 100
+            if change_pct > 30:
+                return [Anomaly(
+                    metric="response_time_trend",
+                    value=round(slope, 4),
+                    expected_range=(-float("inf"), 0),
+                    severity="medium",
+                    description=f"Response time trending upward: +{change_pct:.1f}% over test duration",
+                )]
+        return []
+
+    def _calculate_health_score(self, rt: list, err: list, thr: list,
+                                 anomalies: list) -> float:
+        """Calculate a 0-100 health score."""
+        score = 100.0
+
+        # Penalize for anomalies
+        for a in anomalies:
+            if a.severity == "high":
+                score -= 15
+            elif a.severity == "medium":
+                score -= 8
+            else:
+                score -= 3
+
+        # Penalize for high error rates
+        avg_err = sum(err) / len(err) if err else 0
+        if avg_err > 5:
+            score -= 20
+        elif avg_err > 1:
+            score -= 10
+
+        # Penalize for throughput degradation
+        if len(thr) >= 2 and thr[-1] < thr[0] * 0.7:
+            score -= 15
+
+        return max(0, min(100, score))
+
+    def _stddev(self, values: list[float], mean: float) -> float:
+        if len(values) < 2:
+            return 0
+        return math.sqrt(sum((v - mean) ** 2 for v in values) / (len(values) - 1))
+
+
+class MetricsCorrelator:
+    """Correlate JMeter metrics with external system metrics (Prometheus/Grafana).
+
+    Usage:
+        correlator = MetricsCorrelator()
+        corr = await correlator.correlate(test_metrics, prometheus_url, query)
+    """
+
+    async def fetch_prometheus_metrics(
+        self, prometheus_url: str, query: str,
+        start_time: str = None, end_time: str = None,
+    ) -> dict:
+        """Query Prometheus for system metrics during a test window.
+
+        Args:
+            prometheus_url: Prometheus API base URL (e.g. http://localhost:9090).
+            query: PromQL query (e.g. 'rate(node_cpu_seconds_total[1m])').
+            start_time: ISO-format start time (default: 1 hour ago).
+            end_time: ISO-format end time (default: now).
+        """
+        import httpx
+        from datetime import timedelta
+
+        if not end_time:
+            end_time = utc_now_naive().isoformat() + "Z"
+        if not start_time:
+            start_time = (utc_now_naive() - timedelta(hours=1)).isoformat() + "Z"
+
+        api_url = f"{prometheus_url.rstrip('/')}/api/v1/query_range"
+        params = {
+            "query": query,
+            "start": start_time,
+            "end": end_time,
+            "step": "30s",
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.get(api_url, params=params)
+                resp.raise_for_status()
+                data = resp.json()
+                return self._parse_prometheus_response(data)
+        except Exception as e:
+            return {"error": str(e), "query": query}
+
+    def _parse_prometheus_response(self, data: dict) -> dict:
+        """Parse Prometheus range query response."""
+        result = data.get("data", {}).get("result", [])
+        parsed = {}
+        for series in result:
+            metric_name = series.get("metric", {}).get("__name__", "unknown")
+            values = [
+                {"timestamp": v[0], "value": float(v[1])}
+                for v in series.get("values", [])
+            ]
+            if values:
+                avg = sum(v["value"] for v in values) / len(values)
+                parsed[metric_name] = {
+                    "avg": round(avg, 4),
+                    "min": round(min(v["value"] for v in values), 4),
+                    "max": round(max(v["value"] for v in values), 4),
+                    "samples": len(values),
+                }
+        return parsed
+
+    async def correlate(
+        self, test_metrics: dict, system_metrics: dict,
+    ) -> dict:
+        """Correlate test metrics with system metrics.
+
+        Returns correlation insights — e.g., "high latency correlates with CPU spike"
+        """
+        insights = []
+
+        test_p99 = test_metrics.get("p99_response_time", 0) or 0
+        test_avg = test_metrics.get("avg_response_time", 0) or 0
+        test_errors = test_metrics.get("error_rate", 0) or 0
+
+        # CPU correlation
+        cpu_avg = system_metrics.get("node_cpu_seconds_total", {}).get("avg", 0)
+        if cpu_avg > 0.8 and test_p99 > 200:
+            insights.append(
+                f"High CPU ({cpu_avg*100:.0f}%) correlates with elevated P99 ({test_p99}ms) — "
+                "CPU may be the bottleneck"
+            )
+
+        # Memory correlation
+        mem_max = system_metrics.get("node_memory_MemAvailable_bytes", {}).get("max", 0)
+        if mem_max > 0:
+            insights.append(
+                f"Memory available: {mem_max / 1024**3:.1f}GB — "
+                f"{'Low memory may impact performance' if mem_max < 1 * 1024**3 else 'Memory OK'}"
+            )
+
+        if not insights:
+            insights.append("No strong correlation found between test and system metrics")
+
+        return {
+            "test_metrics_summary": {
+                "p99": test_p99,
+                "avg": test_avg,
+                "error_rate": test_errors,
+            },
+            "system_metrics_summary": system_metrics,
+            "correlation_insights": insights,
+        }
+
+
+ml_detector = MLAnomalyDetector()
+metrics_correlator = MetricsCorrelator()

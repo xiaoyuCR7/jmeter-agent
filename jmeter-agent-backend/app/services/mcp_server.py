@@ -1,0 +1,575 @@
+"""MCP (Model Context Protocol) Server — JSON-RPC 2.0 over HTTP/SSE.
+
+Exposes all agent tools as MCP tools, plus resources and prompt templates.
+Enables Claude Code, Cursor, Copilot, and other MCP clients to orchestrate
+the JMeter Agent as a tool in their workflow.
+
+Spec: https://spec.modelcontextprotocol.io/
+"""
+
+import json
+import asyncio
+import logging
+import secrets
+from typing import Optional, Dict, Any, Callable
+from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
+
+
+# ── JSON-RPC 2.0 Types ───────────────────────────────────
+
+@dataclass
+class JSONRPCRequest:
+    jsonrpc: str = "2.0"
+    id: Optional[str] = None
+    method: str = ""
+    params: Optional[dict] = None
+
+
+@dataclass
+class JSONRPCResponse:
+    jsonrpc: str = "2.0"
+    id: Optional[str] = None
+    result: Optional[Any] = None
+    error: Optional[dict] = None
+
+
+@dataclass
+class JSONRPCNotification:
+    jsonrpc: str = "2.0"
+    method: str = ""
+    params: Optional[dict] = None
+
+
+# ── Tool / Resource / Prompt Definitions ──────────────────
+
+@dataclass
+class MCPTool:
+    name: str
+    description: str
+    inputSchema: dict
+    handler: Callable
+
+
+@dataclass
+class MCPResource:
+    uri: str
+    name: str
+    description: str
+    mimeType: str = "application/json"
+
+
+@dataclass
+class MCPPrompt:
+    name: str
+    description: str
+    arguments: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class MCPSession:
+    """One authenticated legacy SSE connection; never a business-event subscriber."""
+    id: str
+    owner: str
+    queue: asyncio.Queue
+    phase: str = "new"
+    pending: dict = field(default_factory=dict)
+    seen_ids: set = field(default_factory=set)
+    closed: bool = False
+    server: Any = None
+    mailbox: Any = None
+    route_identity: Any = None
+    route_generation: Optional[str] = None
+
+
+class MCPTransportError(Exception):
+    def __init__(self, status_code: int, detail: str):
+        self.status_code = status_code
+        self.detail = detail
+        super().__init__(detail)
+
+
+class MCPServer:
+    """MCP Protocol server — wraps agent tools into MCP-compatible interface.
+
+    Usage:
+        server = MCPServer()
+        server.register_tools_from_agent_tools()
+        # Mount at /mcp/ in FastAPI
+    """
+
+    MAX_SESSIONS = 128
+    MAX_OWNER_SESSIONS = 4
+    MAX_PENDING_REQUESTS = 32
+    MAX_SESSION_REQUESTS = 4096
+    RESPONSE_QUEUE_SIZE = 64
+    REQUEST_TIMEOUT_SECONDS = 300
+
+    def __init__(self, name: str = "jmeter-agent", version: str = "1.0.0"):
+        self.name = name
+        self.version = version
+        self._tools: Dict[str, MCPTool] = {}
+        from app.services.ai.agent.tool_registry import ToolRegistry
+        self._tool_registry = ToolRegistry()
+        self._resources: Dict[str, MCPResource] = {}
+        self._prompts: Dict[str, MCPPrompt] = {}
+        self._sessions: Dict[str, MCPSession] = {}
+
+    # ── Registration ────────────────────────────────────
+
+    def register_tool(self, name: str, description: str, schema: dict, handler: Callable, require_confirmation=False):
+        from app.services.ai.agent.tool_registry import Tool
+        if name in self._tools:
+            return
+        definition = Tool(name, description, schema, handler, require_confirmation=require_confirmation)
+        self._tool_registry.register(definition)
+        self._tools[name] = MCPTool(
+            name=name, description=description, inputSchema=definition.parameters, handler=handler,
+        )
+
+    def register_resource(self, uri: str, name: str, description: str, mime: str = "application/json"):
+        self._resources[uri] = MCPResource(
+            uri=uri, name=name, description=description, mimeType=mime,
+        )
+
+    def register_prompt(self, name: str, description: str, arguments: list[dict] = None):
+        self._prompts[name] = MCPPrompt(
+            name=name, description=description, arguments=arguments or [],
+        )
+
+    def register_all_agent_tools(self):
+        """Import and register all 31 built-in agent tools as MCP tools."""
+        from app.services.ai.agent.tools import get_all_builtin_tools
+        tools = get_all_builtin_tools()
+        for tool in tools:
+            self.register_tool(
+                name=tool.name,
+                description=tool.description,
+                schema=tool.parameters if hasattr(tool, 'parameters') else {},
+                handler=tool.handler,
+                require_confirmation=tool.require_confirmation,
+            )
+
+    def register_all_resources(self):
+        """Register projects, test plans, executions, baselines as MCP resources."""
+        # Dynamic resources — list will query actual store at read time
+        self.register_resource(
+            "resource://projects", "Projects",
+            "All test projects with environment configs",
+        )
+        self.register_resource(
+            "resource://test-plans", "Test Plans",
+            "All JMX test plans with configurations",
+        )
+        self.register_resource(
+            "resource://executions", "Executions",
+            "Test execution history with results",
+        )
+        self.register_resource(
+            "resource://baselines", "Performance Baselines",
+            "Baseline metrics for regression detection",
+        )
+        self.register_resource(
+            "resource://reports", "Test Reports",
+            "Parsed performance test reports",
+        )
+
+    def register_all_prompts(self):
+        """Register pre-built prompt templates for common workflows."""
+        self.register_prompt(
+            "workflow-from-api-doc",
+            "Full performance test workflow from API documentation",
+            [
+                {"name": "api_doc", "description": "API documentation (OpenAPI/Swagger or free text)", "required": True},
+                {"name": "test_types", "description": "Test types: baseline, concurrency, stress, etc.", "required": False},
+                {"name": "execute", "description": "Whether to automatically execute tests", "required": False},
+            ],
+        )
+        self.register_prompt(
+            "analyze-report",
+            "Analyze a JMeter test report and provide recommendations",
+            [
+                {"name": "jtl_path", "description": "Path to the JTL result file", "required": True},
+                {"name": "compare_baseline", "description": "Whether to compare against baseline", "required": False},
+            ],
+        )
+        self.register_prompt(
+            "autotune",
+            "Autonomously find optimal test parameters",
+            [
+                {"name": "goal", "description": "Optimization goal, e.g. 'find max safe concurrency with P99 < 500ms'", "required": True},
+                {"name": "jmx_path", "description": "Path to the test plan to use", "required": True},
+                {"name": "max_iterations", "description": "Max optimization iterations (default 10)", "required": False},
+            ],
+        )
+
+    # ── JSON-RPC Request Handling ────────────────────────
+
+    def _parse_request(self, raw_body):
+        """MCP envelopes are objects, with object params and non-null integer/string IDs."""
+        try:
+            def reject_constant(value):
+                raise ValueError(value)
+            body = json.loads(raw_body, parse_constant=reject_constant)
+        except (ValueError, UnicodeDecodeError, RecursionError):
+            return None, self._error_response(None, -32700, "Parse error")
+        if (not isinstance(body, dict) or body.get("jsonrpc") != "2.0"
+                or not isinstance(body.get("method"), str) or not body["method"]
+                or ("id" in body and type(body["id"]) not in (str, int))
+                or "result" in body or "error" in body):
+            return None, self._error_response(None, -32600, "Invalid Request")
+        if "params" in body and not isinstance(body["params"], dict):
+            error = self._error_response(body.get("id"), -32602, "Invalid params")
+            return None, error if "id" in body else None
+        return body, None
+
+    async def handle_request(self, raw_body: str) -> Optional[dict]:
+        """Internal single-message dispatcher; HTTP clients must use an SSE session."""
+        body, error = self._parse_request(raw_body)
+        if body is None:
+            return error
+        if "id" not in body:
+            # Notifications cannot invoke tools or create request responses.
+            return None
+        return await self._execute_request(body)
+
+    async def _execute_request(self, body: dict) -> dict:
+        req_id, method = body["id"], body["method"]
+        try:
+            result = await self._dispatch(method, body.get("params", {}), req_id)
+            return self._success_response(req_id, result)
+        except MCPError as e:
+            return self._error_response(req_id, e.code, e.message)
+        except Exception:
+            logger.exception("MCP dispatch error: %s", method)
+            return self._error_response(req_id, -32603, "Internal error")
+
+    def create_session(self, owner: str) -> MCPSession:
+        if (len(self._sessions) >= self.MAX_SESSIONS
+                or sum(s.owner == owner for s in self._sessions.values()) >= self.MAX_OWNER_SESSIONS):
+            raise MCPTransportError(429, "Too many MCP sessions")
+        session = MCPSession(secrets.token_urlsafe(32), owner, asyncio.Queue(self.RESPONSE_QUEUE_SIZE), server=self)
+        self._sessions[session.id] = session
+        return session
+
+    def get_session(self, session_id: str, owner: str) -> MCPSession:
+        session = self._sessions.get(session_id)
+        if not session or session.closed or session.owner != owner:
+            raise MCPTransportError(404, "MCP session not found")
+        return session
+
+    async def close_session(self, session: MCPSession):
+        session.closed = True
+        self._sessions.pop(session.id, None)
+        tasks = list(session.pending.values())
+        for task in tasks:
+            task.cancel()
+        try:
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            try:
+                if session.mailbox is not None:
+                    await session.mailbox.close(session)
+            finally:
+                session.pending.clear()
+                session.seen_ids.clear()
+                while not session.queue.empty():
+                    session.queue.get_nowait()
+
+    def submit(self, session: MCPSession, raw_body):
+        """Accept work without awaiting a tool. Only the owning SSE stream gets replies."""
+        if session.closed:
+            raise MCPTransportError(404, "MCP session not found")
+        body, error = self._parse_request(raw_body)
+        if body is not None and "id" not in body:
+            method, params = body["method"], body.get("params", {})
+            if method == "notifications/initialized" and session.phase == "initialized":
+                session.phase = "ready"
+            elif method == "notifications/cancelled":
+                req_id = params.get("requestId")
+                if type(req_id) in (str, int) and session.phase != "initializing":
+                    task = session.pending.get(req_id)
+                    if task:
+                        task.cancel()
+            return
+        if body is None and error is None:
+            return
+        # Reserve a response slot for every pending request, so no result is dropped.
+        if (session.queue.qsize() + len(session.pending) >= self.RESPONSE_QUEUE_SIZE
+                or len(session.pending) >= self.MAX_PENDING_REQUESTS):
+            raise MCPTransportError(429, "MCP session busy; consume responses before retrying")
+        if body is None:
+            session.queue.put_nowait(error)
+            return
+        req_id, method = body["id"], body["method"]
+        if req_id in session.seen_ids:
+            raise MCPTransportError(409, "Request ID already used in this MCP session")
+        if len(session.seen_ids) >= self.MAX_SESSION_REQUESTS:
+            raise MCPTransportError(429, "MCP session request limit reached; reconnect")
+        session.seen_ids.add(req_id)
+        if method == "initialize":
+            if session.phase != "new":
+                session.queue.put_nowait(self._error_response(req_id, -32600, "Already initialized"))
+                return
+            session.phase = "initializing"
+        elif method != "ping" and session.phase != "ready":
+            session.queue.put_nowait(self._error_response(req_id, -32002, "Session not initialized"))
+            return
+
+        async def run():
+            try:
+                try:
+                    result = await asyncio.wait_for(self._execute_request(body), self.REQUEST_TIMEOUT_SECONDS)
+                except asyncio.TimeoutError:
+                    result = self._error_response(req_id, -32000, "Request timed out")
+                if not session.closed:
+                    session.queue.put_nowait(result)
+                    if method == "initialize":
+                        session.phase = "initialized" if "result" in result else "new"
+            finally:
+                session.pending.pop(req_id, None)
+
+        task = asyncio.create_task(run())
+        session.pending[req_id] = task
+        # A task cancelled before its coroutine starts never enters run's finally.
+        task.add_done_callback(lambda finished: session.pending.pop(req_id, None))
+
+    async def _dispatch(self, method: str, params: dict, req_id: str) -> Any:
+        """Route JSON-RPC method to handler."""
+        handlers = {
+            "initialize": self._handle_initialize,
+            "ping": self._handle_ping,
+            "tools/list": self._handle_tools_list,
+            "tools/call": self._handle_tools_call,
+            "resources/list": self._handle_resources_list,
+            "resources/read": self._handle_resources_read,
+            "prompts/list": self._handle_prompts_list,
+            "prompts/get": self._handle_prompts_get,
+        }
+        handler = handlers.get(method)
+        if not handler:
+            raise MCPError(-32601, f"Method not found: {method}")
+        return await handler(params)
+
+    # ── Lifecycle Handlers ───────────────────────────────
+
+    async def _handle_initialize(self, params: dict) -> dict:
+        client_info = params.get("clientInfo")
+        if (not isinstance(params.get("protocolVersion"), str)
+                or not isinstance(params.get("capabilities"), dict)
+                or not isinstance(client_info, dict)
+                or not isinstance(client_info.get("name"), str)
+                or not isinstance(client_info.get("version"), str)):
+            raise MCPError(-32602, "Invalid initialize params")
+
+        return {
+            "protocolVersion": "2024-11-05",
+            "serverInfo": {
+                "name": self.name,
+                "version": self.version,
+            },
+            "capabilities": {
+                "tools": {"listChanged": False},
+                "resources": {"subscribe": False, "listChanged": False},
+                "prompts": {"listChanged": False},
+            },
+            "instructions": (
+                "JMeter Agent MCP Server — AI-driven performance testing.\n"
+                "Use tools to create test plans, execute tests, analyze results.\n"
+                "Use resources to browse projects, test plans, executions, baselines.\n"
+                "Use prompts for common workflows like autotune and report analysis."
+            ),
+        }
+
+    async def _handle_ping(self, params: dict) -> dict:
+        return {}
+
+    # ── Tools ────────────────────────────────────────────
+
+    async def _handle_tools_list(self, params: dict) -> dict:
+        tools = []
+        for name, tool in self._tools.items():
+            tools.append({
+                "name": tool.name,
+                "description": tool.description,
+                "inputSchema": tool.inputSchema or {
+                    "type": "object",
+                    "properties": {},
+                },
+            })
+        return {"tools": tools}
+
+    async def _handle_tools_call(self, params: dict) -> dict:
+        tool_name = params.get("name", "")
+        arguments = params.get("arguments", {})
+
+        if not isinstance(tool_name, str):
+            raise MCPError(-32602, "Invalid tool name")
+        tool = self._tools.get(tool_name)
+        if not tool:
+            raise MCPError(-32602, f"Unknown tool: {tool_name}")
+
+        argument_error = self._tool_registry.validate_arguments(tool_name, arguments)
+        if argument_error:
+            raise MCPError(-32602, argument_error)
+
+        try:
+            outcome = await self._tool_registry.execute(tool_name, arguments)
+            result = outcome.data if outcome.success else {'error': outcome.error, 'data': outcome.data}
+            # Format result for MCP
+            if isinstance(result, dict):
+                content = json.dumps(result, ensure_ascii=False, default=str)
+            else:
+                content = str(result)
+            return {
+                "content": [
+                    {"type": "text", "text": content}
+                ],
+                "isError": not outcome.success,
+            }
+        except Exception as e:
+            return {
+                "content": [
+                    {"type": "text", "text": json.dumps({"error": str(e)})}
+                ],
+                "isError": True,
+            }
+
+    # ── Resources ────────────────────────────────────────
+
+    async def _handle_resources_list(self, params: dict) -> dict:
+        resources = []
+        for uri, res in self._resources.items():
+            resources.append({
+                "uri": res.uri,
+                "name": res.name,
+                "description": res.description,
+                "mimeType": res.mimeType,
+            })
+        return {"resources": resources}
+
+    async def _handle_resources_read(self, params: dict) -> dict:
+        uri = params.get("uri", "")
+        if not isinstance(uri, str):
+            raise MCPError(-32602, "Invalid resource URI")
+
+        # Resolve dynamic resources
+        if uri == "resource://projects":
+            from app.services.db_store import db_store
+            result = await db_store.list_projects(limit=200)
+            data = json.dumps(result, ensure_ascii=False, default=str)
+        elif uri == "resource://test-plans":
+            from app.services.db_store import db_store
+            result = await db_store.list_test_plans(limit=200)
+            data = json.dumps(result, ensure_ascii=False, default=str)
+        elif uri == "resource://executions":
+            from app.services.db_store import db_store
+            result = await db_store.list_executions(limit=200)
+            data = json.dumps(result, ensure_ascii=False, default=str)
+        elif uri == "resource://baselines":
+            from app.services.db_store import db_store
+            result = await db_store.list_baselines()
+            data = json.dumps(result, ensure_ascii=False, default=str)
+        elif uri == "resource://reports":
+            from app.services.ai.agent.tools.jmeter import list_report_dir
+            result = await list_report_dir()
+            data = json.dumps(result, ensure_ascii=False, default=str)
+        elif uri.startswith("resource://") and self._resources.get(uri):
+            data = json.dumps({"uri": uri, "name": self._resources[uri].name})
+        else:
+            raise MCPError(-32602, f"Unknown resource: {uri}")
+
+        return {
+            "contents": [
+                {"uri": uri, "mimeType": "application/json", "text": data}
+            ]
+        }
+
+    # ── Prompts ──────────────────────────────────────────
+
+    async def _handle_prompts_list(self, params: dict) -> dict:
+        prompts = []
+        for name, prompt in self._prompts.items():
+            prompts.append({
+                "name": prompt.name,
+                "description": prompt.description,
+                "arguments": prompt.arguments,
+            })
+        return {"prompts": prompts}
+
+    async def _handle_prompts_get(self, params: dict) -> dict:
+        name = params.get("name", "")
+        arguments = params.get("arguments", {})
+        if (not isinstance(name, str) or not isinstance(arguments, dict)
+                or any(not isinstance(value, str) for value in arguments.values())):
+            raise MCPError(-32602, "Invalid prompt params")
+
+        prompt = self._prompts.get(name)
+        if not prompt:
+            raise MCPError(-32602, f"Unknown prompt: {name}")
+
+        # Build the prompt message from the template
+        if name == "workflow-from-api-doc":
+            api_doc = arguments.get("api_doc", "")
+            test_types = arguments.get("test_types", "baseline + concurrency")
+            execute = arguments.get("execute", "false")
+            text = (
+                f"请完成以下端到端性能测试工作流：\n\n"
+                f"测试类型: {test_types}\n"
+                f"执行测试: {execute}\n\n"
+                f"API文档:\n{api_doc}\n\n"
+                f"请：1) 提取接口 2) 创建项目 3) 生成测试计划 4) 检查资源 5) 执行测试 6) 分析结果"
+            )
+        elif name == "analyze-report":
+            jtl = arguments.get("jtl_path", "")
+            compare = arguments.get("compare_baseline", "false")
+            text = (
+                f"请分析这个 JMeter 测试报告: {jtl}\n"
+                f"与基线对比: {compare}\n"
+                f"请给出：整体评估、瓶颈分析、优化建议、SLA判定"
+            )
+        elif name == "autotune":
+            goal = arguments.get("goal", "")
+            jmx = arguments.get("jmx_path", "")
+            max_iter = arguments.get("max_iterations", "10")
+            text = (
+                f"AutoTune 目标: {goal}\n"
+                f"测试计划: {jmx}\n"
+                f"最大迭代次数: {max_iter}\n"
+                f"请使用 execute_test 和 evaluate_sla 工具进行二分搜索优化，"
+                f"每次迭代后分析结果并调整参数，直到找到最优配置。"
+            )
+        else:
+            text = f"Prompt: {name}"
+
+        return {
+            "description": prompt.description,
+            "messages": [
+                {"role": "user", "content": {"type": "text", "text": text}}
+            ],
+        }
+
+    # ── Helpers ──────────────────────────────────────────
+
+    def _success_response(self, req_id: str, result: Any) -> dict:
+        return {"jsonrpc": "2.0", "id": req_id, "result": result}
+
+    def _error_response(self, req_id: str, code: int, message: str) -> dict:
+        return {
+            "jsonrpc": "2.0",
+            "id": req_id,
+            "error": {"code": code, "message": message},
+        }
+
+
+class MCPError(Exception):
+    def __init__(self, code: int, message: str):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+# Module singleton
+mcp_server = MCPServer()

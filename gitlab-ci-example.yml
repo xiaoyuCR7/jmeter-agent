@@ -1,0 +1,49 @@
+# Copy this file into .gitlab-ci.yml together with .github/scripts/performance_gate.py.
+# Configure masked JMETER_AGENT_URL/JMETER_AGENT_TOKEN variables and reviewed,
+# registered JMETER_SMOKE_PLAN_ID/JMETER_FULL_PLAN_ID/JMETER_PROJECT_ID values.
+# Optional JMETER_BASELINE_EXECUTION_ID enables regression gating.
+stages: [smoke, performance, nightly]
+
+default:
+  image: python:3.12-slim
+  artifacts:
+    when: always
+    paths: [performance-artifacts/]
+    expire_in: 30 days
+
+variables:
+  AGENT_URL: $JMETER_AGENT_URL
+  AGENT_TOKEN: $JMETER_AGENT_TOKEN
+  AGENT_PROJECT_ID: $JMETER_PROJECT_ID
+  AGENT_BASELINE_EXECUTION_ID: $JMETER_BASELINE_EXECUTION_ID
+
+smoke-test:
+  stage: smoke
+  variables:
+    AGENT_PLAN_ID: $JMETER_SMOKE_PLAN_ID
+  script:
+    - python .github/scripts/performance_gate.py --timeout 540
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule"'
+  allow_failure: false
+  timeout: 10m
+
+full-performance:
+  stage: performance
+  variables:
+    AGENT_PLAN_ID: $JMETER_FULL_PLAN_ID
+  script:
+    - python .github/scripts/performance_gate.py --timeout 3300
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "schedule" && ($CI_COMMIT_BRANCH == "main" || $CI_COMMIT_BRANCH == "master" || $CI_COMMIT_TAG)'
+  allow_failure: false
+  timeout: 60m
+
+nightly-drift:
+  stage: nightly
+  script:
+    - python .github/scripts/performance_gate.py --mode drift
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  allow_failure: false
+  timeout: 15m
