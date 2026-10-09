@@ -98,7 +98,7 @@
 
             <el-divider>{{ t('projectSettings.env.variables') }}</el-divider>
             <div class="env-table-wrapper">
-              <el-table :data="envVarsTable(env)" border size="small">
+              <el-table :data="env.varRows || []" border size="small">
                 <el-table-column :label="t('projectSettings.env.varName')" min-width="150">
                   <template #default="{ row }">
                     <el-input v-model="row.key" size="small" :disabled="!canWrite" :placeholder="t('projectSettings.env.varNamePlaceholder')" @change="applyEnvVars(env)" />
@@ -124,7 +124,7 @@
 
             <el-divider>{{ t('projectSettings.env.headers') }}</el-divider>
             <div class="env-table-wrapper">
-              <el-table :data="envHeadersTable(env)" border size="small">
+              <el-table :data="env.headerRows || []" border size="small">
                 <el-table-column :label="t('projectSettings.env.headerName')" min-width="150">
                   <template #default="{ row }">
                     <el-input v-model="row.key" size="small" :disabled="!canWrite" :placeholder="t('projectSettings.env.headerNamePlaceholder')" @change="applyEnvHeaders(env)" />
@@ -233,12 +233,16 @@ import { useI18n } from '@/composables/useI18n'
 const { t, currentLang } = useI18n()
 const aclText = (zh: string, en: string) => currentLang.value === 'en' ? en : zh
 
+interface KVRow { key: string; value: string }
+
 interface EnvData {
   id: string
   name: string
   base_url: string
   variables: Record<string, string>
   headers: Record<string, string>
+  varRows?: KVRow[]
+  headerRows?: KVRow[]
 }
 
 const route = useRoute()
@@ -350,50 +354,60 @@ const envDialogForm = reactive({
   base_url: '',
 })
 
-// Convert env variables object to table rows
-function envVarsTable(env: EnvData) {
-  return Object.entries(env.variables || {}).map(([key, value]) => ({ key, value }))
-}
-
-function envHeadersTable(env: EnvData) {
-  return Object.entries(env.headers || {}).map(([key, value]) => ({ key, value }))
+// Rebuild a record from table rows; returns null when duplicate keys exist.
+function rowsToRecord(rows: KVRow[]): Record<string, string> | null {
+  const out: Record<string, string> = {}
+  for (const r of rows) {
+    const k = r.key.trim()
+    if (!k) continue
+    if (k in out) return null
+    out[k] = r.value
+  }
+  return out
 }
 
 function applyEnvVars(env: EnvData) {
-  const vars: Record<string, string> = {}
-  // Read from DOM — we use a different approach: rebuild from table state
-  // Instead, trigger update on change
+  const rec = rowsToRecord(env.varRows || [])
+  if (rec === null) {
+    ElMessage.error(aclText('变量名不能重复', 'Variable names must be unique'))
+    return
+  }
+  env.variables = rec
   updateEnv(env)
 }
 
 function applyEnvHeaders(env: EnvData) {
+  const rec = rowsToRecord(env.headerRows || [])
+  if (rec === null) {
+    ElMessage.error(aclText('请求头名称不能重复', 'Header names must be unique'))
+    return
+  }
+  env.headers = rec
   updateEnv(env)
 }
 
 function addEnvVar(env: EnvData) {
   if (!canWrite.value) return
-  env.variables = { ...env.variables, '': '' }
+  if (!env.varRows) env.varRows = []
+  env.varRows.push({ key: '', value: '' })
 }
 
 function removeEnvVar(env: EnvData, index: number) {
   if (!canWrite.value) return
-  const entries = Object.entries(env.variables)
-  entries.splice(index, 1)
-  env.variables = Object.fromEntries(entries)
-  updateEnv(env)
+  env.varRows?.splice(index, 1)
+  applyEnvVars(env)
 }
 
 function addEnvHeader(env: EnvData) {
   if (!canWrite.value) return
-  env.headers = { ...env.headers, '': '' }
+  if (!env.headerRows) env.headerRows = []
+  env.headerRows.push({ key: '', value: '' })
 }
 
 function removeEnvHeader(env: EnvData, index: number) {
   if (!canWrite.value) return
-  const entries = Object.entries(env.headers)
-  entries.splice(index, 1)
-  env.headers = Object.fromEntries(entries)
-  updateEnv(env)
+  env.headerRows?.splice(index, 1)
+  applyEnvHeaders(env)
 }
 
 // Load data
@@ -432,6 +446,8 @@ async function loadEnvironments() {
         ...e,
         variables: e.variables || {},
         headers: e.headers || {},
+        varRows: Object.entries(e.variables || {}).map(([key, value]) => ({ key, value: String(value) })),
+        headerRows: Object.entries(e.headers || {}).map(([key, value]) => ({ key, value: String(value) })),
       }))
     }
     activeEnvId.value = res.data?.active_id || null

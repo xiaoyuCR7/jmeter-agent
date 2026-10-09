@@ -360,6 +360,7 @@ export const api = {
 
   getSchedules: (project_id?: string) => instance.get('/schedules', { params: project_id ? { project_id } : {} }),
   createSchedule: (data: any) => instance.post('/schedules', data),
+  updateSchedule: (id: number, data: any) => instance.put(`/schedules/${id}`, data),
   deleteSchedule: (id: number) => instance.delete(`/schedules/${id}`),
   toggleSchedule: (id: number) => instance.post(`/schedules/${id}/toggle`),
 
@@ -368,6 +369,7 @@ export const api = {
     instance.get('/baselines/active', { params: { project_id, test_plan_id } }),
   createBaseline: ({ thresholds, metrics_snapshot, ...params }: any) =>
     instance.post('/baselines', { thresholds, metrics_snapshot }, { params }),
+  activateBaseline: (id: number) => instance.post(`/baselines/${id}/activate`),
   deleteBaseline: (id: number) => instance.delete(`/baselines/${id}`),
 
   uploadCSV: (file: File, project_id?: string) => {

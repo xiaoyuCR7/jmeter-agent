@@ -296,11 +296,11 @@ const searchKeyword = ref('')
 const expandedProjects = ref<Set<string>>(new Set())
 const planViewTab = ref('overview')
 
-const planViewTabs = [
-  { name: 'overview', label: () => t('testPlans.view.overview') },
-  { name: 'debug', label: () => t('testPlans.view.debug') },
-  { name: 'testcase', label: () => t('testPlans.view.testcase') },
-]
+const planViewTabs = computed(() => [
+  { name: 'overview', label: t('testPlans.view.overview') },
+  { name: 'debug', label: t('testPlans.view.debug') },
+  { name: 'testcase', label: t('testPlans.view.testcase') },
+])
 
 // Project dialog
 const projectDialogVisible = ref(false)

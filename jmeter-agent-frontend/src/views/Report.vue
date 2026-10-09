@@ -89,13 +89,14 @@
                   <div class="compare-metric">
                     <span class="label">{{ t('report.errorRate') }}</span>
                     <span class="value">{{ compareReport.summary.error_rate }}%</span>
-                    <span class="change" :class="getChangeClass(compareReport.summary.error_rate, report.summary.error_rate)">
+                    <span class="change" :class="getChangeClass(report.summary.error_rate, compareReport.summary.error_rate)">
                       {{ getChange(report.summary.error_rate, compareReport.summary.error_rate) }}
                     </span>
                   </div>
                   <div class="compare-metric">
                     <span class="label">{{ t('report.throughput') }}</span>
                     <span class="value">{{ compareReport.summary.throughput }} req/s</span>
+                    <!-- 吞吐量为"越高越好"指标，参数故意传反：上升 → 'good' -->
                     <span class="change" :class="getChangeClass(compareReport.summary.throughput, report.summary.throughput)">
                       {{ getChange(report.summary.throughput, compareReport.summary.throughput) }}
                     </span>

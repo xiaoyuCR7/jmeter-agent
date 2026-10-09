@@ -261,9 +261,11 @@ const saveSchedule = async () => {
 
   try {
     if (editingSchedule.value) {
-      await api.deleteSchedule(editingSchedule.value.id)
+      const { project_id, ...patch } = form.value
+      await api.updateSchedule(editingSchedule.value.id, patch)
+    } else {
+      await api.createSchedule(form.value)
     }
-    await api.createSchedule(form.value)
     ElMessage.success(editingSchedule.value ? t('general.success') : t('schedules.created'))
     showCreateDialog.value = false
     editingSchedule.value = null

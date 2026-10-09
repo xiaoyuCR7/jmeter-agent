@@ -431,6 +431,29 @@ class DBStore:
             await s.commit()
             return True
 
+    async def set_active_baseline(self, baseline_id: int) -> Optional[dict]:
+        """Atomically activate one baseline and deactivate its siblings in the
+        same project/test-plan scope. Returns the activated baseline or None."""
+        _scope()
+        async with await self._session() as s:
+            b = await s.get(BaselineModel, baseline_id)
+            if not b:
+                return None
+            _require_project(b.project_id, write=True)
+            stmt = select(BaselineModel).where(
+                BaselineModel.project_id == b.project_id,
+                BaselineModel.id != baseline_id,
+                BaselineModel.is_active == True,
+            )
+            if b.test_plan_id:
+                stmt = stmt.where(BaselineModel.test_plan_id == b.test_plan_id)
+            siblings = (await s.execute(stmt)).scalars()
+            for sibling in siblings:
+                sibling.is_active = False
+            b.is_active = True
+            await s.commit()
+            return self._baseline_to_dict(b)
+
     def _baseline_to_dict(self, b: BaselineModel) -> dict:
         return {
             "id": b.id, "project_id": b.project_id, "test_plan_id": b.test_plan_id,

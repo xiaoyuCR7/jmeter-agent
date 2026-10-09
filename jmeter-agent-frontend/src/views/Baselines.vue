@@ -252,6 +252,7 @@ const loadBaselines = async () => {
   try {
     const res = await api.getBaselines(selectedProjectId.value || undefined)
     baselines.value = res.data || []
+    activeBaseline.value = baselines.value.find((b: any) => b.is_active) || null
   } catch {
     baselines.value = []
   } finally {
@@ -279,7 +280,7 @@ const isActive = (baseline: any) => {
 
 const activateBaseline = async (baseline: any) => {
   try {
-    await api.getActiveBaseline(baseline.project_id, baseline.test_plan_id)
+    await api.activateBaseline(baseline.id)
     ElMessage.success(t('baselines.activated'))
     activeBaseline.value = baseline
     await loadBaselines()

@@ -60,6 +60,18 @@ async def get_active_baseline(
     return baseline
 
 
+@router.post("/baselines/{baseline_id}/activate")
+async def activate_baseline(
+    baseline_id: int,
+    user: UserInfo = Depends(require_auth),
+):
+    """Activate a baseline; other baselines in the same scope are deactivated."""
+    baseline = await db_store.set_active_baseline(baseline_id)
+    if not baseline:
+        raise HTTPException(status_code=404, detail="Baseline not found")
+    return baseline
+
+
 @router.delete("/baselines/{baseline_id}")
 async def delete_baseline(
     baseline_id: int,
