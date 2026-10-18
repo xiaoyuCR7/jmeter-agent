@@ -28,8 +28,8 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: jmeter-agent-backend/requirements*.txt
-      # Universal locks carry platform markers, so one file serves Linux, Windows
-      # and macOS. Regenerate locally with exactly these two commands.
+      # Universal locks carry platform markers, so one file serves every OS in the
+      # test matrix. Regenerate locally with exactly these two commands.
       - name: Rebuild lock files
         run: |
           python -m pip install uv==0.13.0
@@ -41,6 +41,8 @@ jobs:
   backend-portable:
     needs: dependency-lock
     timeout-minutes: 25
+    # macOS is not supported: coordination verifies local filesystems and process
+    # identity only on Windows and Linux.
     strategy:
       fail-fast: false
       matrix:
@@ -50,8 +52,6 @@ jobs:
           - os: ubuntu-latest
             python-version: '3.13'
           - os: windows-latest
-            python-version: '3.13'
-          - os: macos-latest
             python-version: '3.13'
     runs-on: ${{ matrix.os }}
     defaults:

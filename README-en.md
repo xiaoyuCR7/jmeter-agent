@@ -92,6 +92,7 @@ jmeter-agent/
 
 ### Requirements
 
+- **Operating system**: Windows or Linux (macOS is not supported yet: the multi-process coordination layer verifies local filesystems and process identity only on these two platforms)
 - **Python**: 3.11+
 - **Node.js**: 20+
 - **Java**: 11+ (required by JMeter; verify with `java -version`)
@@ -107,7 +108,7 @@ Extract the `bin/` and `lib/` folders from the archive into the project root (al
 
 ```
 jmeter-agent/
-├── bin/jmeter.bat          # Windows; bin/jmeter on Linux/macOS
+├── bin/jmeter.bat          # Windows; bin/jmeter on Linux
 ├── lib/
 └── jmeter-agent-backend/
 ```
@@ -120,7 +121,7 @@ Point it to JMeter's `bin` directory (pointing to the JMeter installation root a
 # Windows (persistent)
 setx JMETER_HOME "C:\apache-jmeter-5.6.3\bin"
 
-# Linux / macOS (add to ~/.bashrc or ~/.zshrc)
+# Linux (add to ~/.bashrc or ~/.zshrc)
 export JMETER_HOME=/opt/apache-jmeter-5.6.3/bin
 ```
 
@@ -361,7 +362,7 @@ npm run test
 **Solution**:
 - Ensure Java 11+ is installed (`java -version`)
 - Make sure Apache JMeter 5.6.3 is installed (see [Prepare the JMeter Runtime](#prepare-the-jmeter-runtime)). The backend locates it via any one of:
-  - `bin/jmeter.bat` (Windows) or `bin/jmeter` (Linux/macOS) exists in the project root
+  - `bin/jmeter.bat` (Windows) or `bin/jmeter` (Linux) exists in the project root
   - `JMETER_HOME` points to JMeter's `bin` directory (or its installation root)
   - JMeter's `bin` directory is on your system `PATH` (verify with `jmeter --version`)
 

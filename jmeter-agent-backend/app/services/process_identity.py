@@ -40,7 +40,12 @@ def coordination_domain():
     elif sys.platform.startswith('linux'):
         machine = Path('/etc/machine-id').read_text().strip()
         namespace = os.readlink('/proc/self/ns/pid')
-        if not namespace or namespace != os.readlink('/proc/1/ns/pid'):
+        # Prove /proc belongs to our own PID namespace using only our own entry:
+        # a foreign procfs numbers this process differently. Reading init's
+        # (/proc/1) namespace needs ptrace access that a non-root service lacks.
+        pid = os.getpid()
+        if (not namespace or os.readlink('/proc/self') != str(pid)
+                or os.readlink(f'/proc/{pid}/ns/pid') != namespace):
             raise RuntimeError('The proc filesystem does not expose the current PID namespace')
         value = ':'.join(['linux', machine, namespace])
     else:

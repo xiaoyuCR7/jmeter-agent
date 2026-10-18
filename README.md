@@ -140,6 +140,7 @@ jmeter-agent/
 
 ### 环境要求
 
+- **操作系统**: Windows 或 Linux（暂不支持 macOS：多进程协调层只在这两个平台上校验本地文件系统和进程身份）
 - **Python**: 3.11+
 - **Node.js**: 20+
 - **Java**: 11+（JMeter 运行依赖，使用 `java -version` 验证）
@@ -155,7 +156,7 @@ jmeter-agent/
 
 ```
 jmeter-agent/
-├── bin/jmeter.bat          # Windows；Linux/macOS 为 bin/jmeter
+├── bin/jmeter.bat          # Windows；Linux 为 bin/jmeter
 ├── lib/
 └── jmeter-agent-backend/
 ```
@@ -168,7 +169,7 @@ jmeter-agent/
 # Windows（永久生效）
 setx JMETER_HOME "C:\apache-jmeter-5.6.3\bin"
 
-# Linux / macOS（写入 ~/.bashrc 或 ~/.zshrc）
+# Linux（写入 ~/.bashrc 或 ~/.zshrc）
 export JMETER_HOME=/opt/apache-jmeter-5.6.3/bin
 ```
 
@@ -188,7 +189,7 @@ export JMETER_HOME=/opt/apache-jmeter-5.6.3/bin
 # Windows
 start.bat
 
-# Linux / macOS
+# Linux
 ./start.sh
 ```
 
@@ -364,7 +365,7 @@ JMETER_GC_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=100
 
 ## CI/CD 集成
 
-仓库的 `.github/workflows/quality.yml` 会在 Windows、Linux、macOS 上执行后端可移植测试，并在 Linux 的安全 SQLite 绑定上执行完整协调测试；同时校验 Python 依赖锁、前端依赖审计、测试与生产构建。
+仓库的 `.github/workflows/quality.yml` 会在 Windows、Linux 上执行后端可移植测试，并在 Linux 的安全 SQLite 绑定上执行完整协调测试；同时校验 Python 依赖锁、前端依赖审计、测试与生产构建。
 
 仓库还提供 `gitlab-ci-example.yml` 示例，展示如何在 GitLab CI 流水线中：
 
@@ -439,7 +440,7 @@ npm run preview   # 本地预览构建产物
 **解决**：
 - 确保已安装 Java 11+（`java -version` 验证）
 - 确认已安装 Apache JMeter 5.6.3（见[准备 JMeter 运行时](#准备-jmeter-运行时)），后端按以下顺序定位，满足任一即可：
-  - 项目根目录下存在 `bin/jmeter.bat`（Windows）或 `bin/jmeter`（Linux/macOS）
+  - 项目根目录下存在 `bin/jmeter.bat`（Windows）或 `bin/jmeter`（Linux）
   - 环境变量 `JMETER_HOME` 指向 JMeter 的 `bin` 目录（指向其安装根目录也可）
   - JMeter 的 `bin` 目录已加入系统 `PATH`（可先用 `jmeter --version` 验证）
 
@@ -463,7 +464,7 @@ npm run preview   # 本地预览构建产物
 set PORT=8001
 start.bat
 
-# Linux / macOS
+# Linux
 PORT=8001 ./start.sh
 ```
 
