@@ -1,6 +1,10 @@
 """Run pytest with a verified Linux pysqlite3 binding, including child probes."""
 import os
 import sys
+from pathlib import Path
+
+# Run as a script, sys.path[0] is tests/; the backend root must be importable as `app`.
+BACKEND_ROOT = str(Path(__file__).resolve().parents[1])
 
 
 def is_wal_reset_safe(version):
@@ -14,7 +18,7 @@ def main():
     try:
         import pysqlite3
     except ImportError as error:
-        raise SystemExit('pysqlite3-binary is required for the full Linux test lane') from error
+        raise SystemExit('pysqlite3 is required for the full coordination test lane') from error
 
     if not is_wal_reset_safe(pysqlite3.sqlite_version_info):
         raise SystemExit(
@@ -27,6 +31,8 @@ def main():
         sys.modules['sqlite3.dbapi2'] = pysqlite3.dbapi2
     os.environ['JMETER_AGENT_TEST_PYSQLITE3'] = '1'
 
+    if BACKEND_ROOT not in sys.path:
+        sys.path.insert(0, BACKEND_ROOT)
     import pytest
     return pytest.main(sys.argv[1:])
 

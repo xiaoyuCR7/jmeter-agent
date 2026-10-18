@@ -16,6 +16,11 @@ from app.core.config import settings
 from app.middleware.concurrency_guard import concurrency_guard
 from app.models.schemas import TestExecutionInfo, TestExecutionStatus
 
+# Windows-only Popen flags; resolved lazily so the Windows branches stay importable
+# and testable on POSIX, where these constants do not exist.
+_CREATE_NO_WINDOW = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+_CREATE_NEW_PROCESS_GROUP = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+
 
 def _is_pid_running(pid: Optional[int]) -> bool:
     """Check whether a process is still alive (False when pid unknown or gone)."""
@@ -262,7 +267,7 @@ class JMeterExecutor:
         options = dict(shell=False, stdin=subprocess.DEVNULL, stdout=console, stderr=subprocess.STDOUT,
                        cwd=entry.get('working_directory'), env=self._process_environment())
         if self.system == 'Windows':
-            options['creationflags'] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+            options['creationflags'] = _CREATE_NEW_PROCESS_GROUP | _CREATE_NO_WINDOW
         else:
             options['start_new_session'] = True
         try:
@@ -454,7 +459,7 @@ class JMeterExecutor:
             if entry.get('container_name'):
                 options = dict(capture_output=True, timeout=15)
                 if self.system == 'Windows':
-                    options['creationflags'] = subprocess.CREATE_NO_WINDOW
+                    options['creationflags'] = _CREATE_NO_WINDOW
                 removed = subprocess.run([entry['docker_path'], 'rm', '-f', entry['container_name']], **options)
                 if removed.returncode != 0:
                     # --rm may have removed it already. Require a successful daemon
@@ -469,7 +474,7 @@ class JMeterExecutor:
                 if self.system == 'Windows':
                     result = subprocess.run(['taskkill', '/F', '/T', '/PID', str(pid)],
                                             capture_output=True, timeout=10,
-                                            creationflags=subprocess.CREATE_NO_WINDOW)
+                                            creationflags=_CREATE_NO_WINDOW)
                     if result.returncode != 0 and _is_pid_running(pid):
                         entry['cleanup_failed'] = True
                         return False

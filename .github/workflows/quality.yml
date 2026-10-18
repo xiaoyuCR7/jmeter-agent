@@ -90,7 +90,7 @@ jobs:
       - name: Install exact dependencies and patched SQLite binding
         run: |
           python -m pip install -r requirements-dev.txt
-          python -m pip install pysqlite3-binary==0.5.4.post2
+          python -m pip install pysqlite3==0.6.1
       - name: Run complete backend suite with verified SQLite
         run: python tests/run_with_patched_sqlite.py tests -q
 

@@ -11,6 +11,8 @@ if sys.platform == 'win32':
     _sqlite_dll = ctypes.WinDLL(os.environ['RECEIPT_TEST_SQLITE_DLL'])
 if os.environ.get('JMETER_AGENT_TEST_PYSQLITE3') == '1':
     import pysqlite3 as sqlite3
+    # The application imports `sqlite3` itself; it must resolve to the verified binding.
+    sys.modules['sqlite3'] = sqlite3
 else:
     import sqlite3
 assert sqlite3.sqlite_version == os.environ['RECEIPT_TEST_SQLITE_VERSION']
