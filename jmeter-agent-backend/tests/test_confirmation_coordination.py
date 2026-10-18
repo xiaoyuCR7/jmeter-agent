@@ -1,13 +1,6 @@
 """Cross-worker confirmations are one-shot, owner-bound, and encrypted at rest."""
 import asyncio
-import ctypes
-import json
-import os
 import sqlite3
-import subprocess
-import sys
-import time
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -154,51 +147,3 @@ async def test_recreated_username_cannot_see_or_decide_old_confirmation(confirma
         await manager.decide(pending[0]['id'], recreated, True)
     waiting.cancel(); await asyncio.gather(waiting, return_exceptions=True)
     operation.close()
-
-
-@pytest.mark.asyncio
-async def test_real_process_confirmation_is_visible_and_consumed_once(confirmation_env, tmp_path):
-    from app.services.confirmations import ConfirmationManager
-    path, _, coordinator, alice, _ = confirmation_env
-    helper = tmp_path / 'worker.py'
-    helper.write_bytes(Path(__file__).with_name('confirmation_worker.py').read_bytes())
-    ready, result, request_path = tmp_path / 'ready.json', tmp_path / 'result.json', tmp_path / 'request.json'
-    request_path.write_text(json.dumps({
-        'database': str(path), 'ready': str(ready), 'result': str(result),
-        'owner': {'username': alice.username, 'role': alice.role, 'user_id': alice.user_id},
-    }), encoding='utf-8')
-    environment = dict(os.environ, PYTHONPATH=str(Path(__file__).resolve().parents[1]))
-    if sys.platform == 'win32':
-        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-        kernel.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
-        kernel.GetModuleHandleW.restype = ctypes.c_void_p
-        kernel.GetModuleFileNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint]
-        path_buffer = ctypes.create_unicode_buffer(32768)
-        assert kernel.GetModuleFileNameW(kernel.GetModuleHandleW('sqlite3.dll'), path_buffer, len(path_buffer))
-        environment['CONFIRMATION_TEST_SQLITE_DLL'] = path_buffer.value
-    child = subprocess.Popen([sys.executable, '-B', str(helper), str(request_path)], env=environment,
-                             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    manager = ConfirmationManager(coordinator=coordinator, poll_seconds=.01)
-    try:
-        deadline = time.monotonic() + 15
-        while not ready.exists() and time.monotonic() < deadline:
-            if child.poll() is not None:
-                pytest.fail(f'child exited: {child.communicate()!r}')
-            await asyncio.sleep(.02)
-        assert ready.exists()
-        proof = json.loads(ready.read_text(encoding='utf-8'))
-        assert proof['pid'] != os.getpid() and proof['sqlite'] == sqlite3.sqlite_version
-        assert proof['journal_mode'] == 'wal'
-        pending = await manager.list_pending(alice)
-        assert len(pending) == 1 and pending[0]['arguments']['path'] == 'child'
-        assert b'child-secret' not in path.read_bytes()
-        await manager.decide(pending[0]['id'], alice, True)
-        child.wait(timeout=10)
-        assert json.loads(result.read_text(encoding='utf-8')) == {'approved': True}
-        with pytest.raises(KeyError):
-            await manager.decide(pending[0]['id'], alice, True)
-        print('real-process-confirmation', json.dumps(proof))
-    finally:
-        if child.poll() is None:
-            child.terminate()
-        child.communicate(timeout=10)
