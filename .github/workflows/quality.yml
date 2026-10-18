@@ -28,14 +28,13 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: jmeter-agent-backend/requirements*.txt
+      # Universal locks carry platform markers, so one file serves Linux, Windows
+      # and macOS. Regenerate locally with exactly these two commands.
       - name: Rebuild lock files
-        env:
-          CUSTOM_COMPILE_COMMAND: uvx --python 3.11 --from pip-tools==7.6.1 pip-compile --strip-extras --no-emit-index-url requirements.in
         run: |
-          python -m pip install pip-tools==7.6.1
-          python -m piptools compile --quiet --strip-extras --no-emit-index-url --resolver=backtracking --output-file requirements.txt requirements.in
-          CUSTOM_COMPILE_COMMAND='uvx --python 3.11 --from pip-tools==7.6.1 pip-compile --strip-extras --no-emit-index-url requirements-dev.in' \
-            python -m piptools compile --quiet --strip-extras --no-emit-index-url --resolver=backtracking --output-file requirements-dev.txt requirements-dev.in
+          python -m pip install uv==0.13.0
+          uv pip compile --universal --python-version 3.11 --quiet requirements.in -o requirements.txt
+          uv pip compile --universal --python-version 3.11 --quiet requirements-dev.in -o requirements-dev.txt
       - name: Require committed locks to be current
         run: git diff --exit-code -- requirements.txt requirements-dev.txt
 

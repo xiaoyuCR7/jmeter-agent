@@ -44,7 +44,7 @@ def test_runtime_requirements_are_generated_from_exact_direct_dependencies():
 
 def test_runtime_lock_records_reproducible_generation_command():
     header = (BACKEND_ROOT / 'requirements.txt').read_text(encoding='utf-8')[:1000]
-    assert 'pip-compile' in header
+    assert 'uv pip compile --universal' in header
     assert 'requirements.in' in header
 
 
@@ -55,7 +55,7 @@ def test_development_requirements_are_also_a_generated_exact_lock():
     header = lock_path.read_text(encoding='utf-8')[:1000]
 
     assert locked and all(_is_exact(requirement) for requirement in locked)
-    assert 'pip-compile' in header
+    assert 'uv pip compile --universal' in header
     assert 'requirements-dev.in' in header
     development_versions = {requirement.name.lower(): str(requirement.specifier)
                             for requirement in locked}

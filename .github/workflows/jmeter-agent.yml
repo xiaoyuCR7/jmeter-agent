@@ -27,20 +27,32 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # Forks and fresh clones have no deployed platform; skip instead of failing.
+      - name: Check platform configuration
+        id: config
+        run: |
+          if [ -n "$AGENT_URL" ] && [ -n "$AGENT_TOKEN" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::JMETER_AGENT_URL / JMETER_AGENT_TOKEN secrets are not set; performance gate skipped."
+          fi
       - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
       - uses: actions/setup-python@v5
+        if: steps.config.outputs.configured == 'true'
         with:
           python-version: '3.12'
       - name: Run reviewed plan and require SLA pass
-        if: github.event_name != 'schedule'
+        if: steps.config.outputs.configured == 'true' && github.event_name != 'schedule'
         env:
           AGENT_PLAN_ID: ${{ github.event_name == 'pull_request' && vars.JMETER_SMOKE_PLAN_ID || vars.JMETER_FULL_PLAN_ID }}
         run: python .github/scripts/performance_gate.py --timeout 3300
       - name: Require stable nightly drift
-        if: github.event_name == 'schedule'
+        if: steps.config.outputs.configured == 'true' && github.event_name == 'schedule'
         run: python .github/scripts/performance_gate.py --mode drift
       - name: Preserve actual JTL and JSON reports
-        if: always()
+        if: always() && steps.config.outputs.configured == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: performance-evidence
