@@ -10,6 +10,7 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 from app.models.schemas import DetailedTestSummary
+from app.services import baseline_compare
 from app.services import requirements as requirement_service
 from app.services import server_metrics
 
@@ -39,13 +40,19 @@ async def build_evidence(execution, summary: DetailedTestSummary) -> ExecutionEv
     except Exception as error:
         logger.warning('Server metrics unavailable for %s: %s', get('id'), error)
         server = {'status': 'error', 'error': type(error).__name__}
+    try:
+        history = await baseline_compare.evidence_for(execution, summary)
+    except Exception as error:
+        logger.warning('Baseline comparison unavailable for %s: %s', get('id'), error)
+        history = None
     return ExecutionEvidence(
         execution_id=get('id'), project_id=project_id, test_plan_id=get('test_plan_id'),
-        requirements=requirement_service.evaluate(stored, summary), server_metrics=server)
+        requirements=requirement_service.evaluate(stored, summary), baseline=history, server_metrics=server)
 
 
 def format_for_prompt(evidence: ExecutionEvidence) -> str:
     return '\n\n'.join([
         requirement_service.format_for_prompt(evidence.requirements),
+        baseline_compare.format_for_prompt(evidence.baseline),
         server_metrics.format_for_prompt(evidence.server_metrics),
     ])

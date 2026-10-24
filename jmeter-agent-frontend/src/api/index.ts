@@ -139,12 +139,28 @@ export interface ServerMetricsEvidence {
   chart?: { name: string; unit: string; series: string; points: [number, number][] }[]
 }
 
+export interface HistoryComparison {
+  name: string
+  execution_id?: string | null
+  baseline_id?: number
+  verdict: 'stable' | 'regression' | 'improvement' | 'mixed' | 'unknown'
+  summary: string
+  deltas: { metric: string; baseline: number; target: number; delta_pct: number | null; direction: string; is_regression: boolean }[]
+  transactions: { label: string; metric: string; metric_title: string; baseline: number; target: number; delta_pct: number | null; is_regression: boolean }[]
+}
+
+export interface HistoryEvidence {
+  baseline: HistoryComparison | null
+  previous: HistoryComparison | null
+  is_baseline?: boolean
+}
+
 export interface ExecutionEvidence {
   execution_id: string
   project_id: string
   test_plan_id: string | null
   requirements: RequirementEvaluation
-  baseline: Record<string, any> | null
+  baseline: HistoryEvidence | null
   server_metrics: ServerMetricsEvidence | null
 }
 
@@ -252,6 +268,7 @@ export const api = {
   deleteMonitoring: (projectId: string) => instance.delete(`/projects/${encodeURIComponent(projectId)}/monitoring`),
   testMonitoring: (projectId: string, data: MonitoringConfig) =>
     instance.post<{ name: string; series: number; error: string | null }[]>(`/projects/${encodeURIComponent(projectId)}/monitoring/test`, data),
+  promoteBaseline: (executionId: string) => instance.post(`/executions/${encodeURIComponent(executionId)}/promote-baseline`),
   refreshServerMetrics: (executionId: string) =>
     instance.post<ExecutionEvidence>(`/executions/${encodeURIComponent(executionId)}/server-metrics/refresh`),
   getExecutionEvidence: (executionId: string) => instance.get<ExecutionEvidence>(`/executions/${encodeURIComponent(executionId)}/evidence`),

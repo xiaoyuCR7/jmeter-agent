@@ -53,6 +53,39 @@
       </el-button>
     </div>
 
+    <section class="history">
+      <div class="section-header">
+        <h4>{{ L('历史对比', 'History') }}</h4>
+        <el-tag v-if="history?.is_baseline" type="success" size="small">{{ L('本次即当前基线', 'This run is the baseline') }}</el-tag>
+        <el-button v-else text size="small" :loading="promoting" @click="promote">{{ L('设为基线', 'Set as baseline') }}</el-button>
+      </div>
+      <p v-if="!history?.baseline && !history?.previous" class="muted">
+        {{ L('还没有可对比的基线或同一测试计划的历史执行。', 'No baseline or earlier run of this test plan to compare with.') }}
+      </p>
+      <div v-for="c in comparisons" :key="c.kind" class="comparison">
+        <div class="comparison-title">
+          <span>{{ c.kind === 'baseline' ? L('对比基线', 'vs baseline') : L('对比上一次', 'vs previous run') }}「{{ c.data.name }}」</span>
+          <el-tag :type="historyType(c.data.verdict)" size="small">{{ historyText(c.data.verdict) }}</el-tag>
+        </div>
+        <div class="deltas">
+          <span v-for="d in c.data.deltas.filter(d => d.metric !== 'min_response_time')" :key="d.metric" class="delta" :class="d.is_regression ? 'bad' : d.direction === 'better' ? 'ok' : ''">
+            {{ metricTitle(d.metric) }} {{ d.baseline }} → {{ d.target }}
+            <small v-if="d.delta_pct !== null">({{ d.delta_pct > 0 ? '+' : '' }}{{ d.delta_pct }}%)</small>
+          </span>
+        </div>
+        <el-table v-if="c.data.transactions.length" :data="c.data.transactions" size="small" class="tx-table">
+          <el-table-column :label="L('接口', 'Transaction')" prop="label" min-width="200" />
+          <el-table-column :label="L('指标', 'Metric')" prop="metric_title" width="90" />
+          <el-table-column :label="L('变化', 'Change')" min-width="170">
+            <template #default="{ row }">
+              <span :class="row.is_regression ? 'bad' : 'ok'">{{ row.baseline }} → {{ row.target }}
+                <small v-if="row.delta_pct !== null">({{ row.delta_pct > 0 ? '+' : '' }}{{ row.delta_pct }}%)</small></span>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+    </section>
+
     <section class="server">
       <div class="section-header">
         <h4>{{ L('服务端指标', 'Server metrics') }}</h4>
@@ -142,6 +175,36 @@ const statusText = (s: string) => ({ pass: L('达标', 'Pass'), fail: L('不达�
 const rowClass = ({ row }: { row: { status: string } }) => row.status === 'fail' ? 'row-fail' : ''
 const format = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(2)
 
+const history = computed(() => props.evidence?.baseline ?? null)
+const comparisons = computed(() => [
+  ...(history.value?.baseline ? [{ kind: 'baseline', data: history.value.baseline }] : []),
+  ...(history.value?.previous ? [{ kind: 'previous', data: history.value.previous }] : []),
+])
+const historyType = (v: string) => ({ regression: 'danger', mixed: 'warning', improvement: 'success', stable: 'info', unknown: 'info' } as Record<string, any>)[v]
+const historyText = (v: string) => ({
+  regression: L('性能退化', 'Regression'), mixed: L('有升有降', 'Mixed'), improvement: L('性能提升', 'Improved'),
+  stable: L('基本持平', 'Stable'), unknown: L('无法比较', 'Unknown'),
+} as Record<string, string>)[v]
+const metricTitle = (m: string) => ({
+  avg_response_time: L('平均', 'Avg'), p95_response_time: 'P95', p99_response_time: 'P99',
+  max_response_time: L('最大', 'Max'), error_rate: L('错误率', 'Errors %'), throughput: 'TPS',
+} as Record<string, string>)[m] || m
+const promoting = ref(false)
+
+async function promote() {
+  if (!props.evidence) return
+  promoting.value = true
+  try {
+    await api.promoteBaseline(props.evidence.execution_id)
+    emit('updated', (await api.getExecutionEvidence(props.evidence.execution_id)).data)
+    ElMessage.success(L('已设为该测试计划的基线', 'Set as the baseline for this test plan'))
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || L('设置基线失败', 'Could not set baseline'))
+  } finally {
+    promoting.value = false
+  }
+}
+
 const server = computed(() => props.evidence?.server_metrics ?? null)
 const chartIndex = ref(0)
 watch(server, () => { chartIndex.value = 0 })
@@ -190,6 +253,12 @@ const chartOption = computed(() => {
 .quote.unverified { color: var(--el-color-warning); }
 .empty p { margin: 0 0 8px; color: var(--tavily-text-secondary); }
 .sla { margin: 0 0 8px; padding-left: 18px; font-size: 13px; }
+.history { margin-top: 24px; border-top: 1px solid var(--tavily-border); padding-top: 16px; }
+.comparison { margin-bottom: 14px; }
+.comparison-title { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+.deltas { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.delta small { color: inherit; opacity: .8; }
+.tx-table { margin-top: 8px; }
 .server { margin-top: 24px; border-top: 1px solid var(--tavily-border); padding-top: 16px; }
 .section-header { display: flex; justify-content: space-between; align-items: center; }
 .section-header h4 { margin: 0 0 10px; font-size: 15px; }
