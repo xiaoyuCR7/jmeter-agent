@@ -30,7 +30,7 @@
             <h2>{{ project.name }}</h2>
             <div class="meta">
               <span v-if="project.environment?.base_url" class="mono">{{ project.environment.base_url }}</span>
-              <span v-if="project.description">{{ project.description }}</span>
+              <span v-if="project.description" class="desc" :title="project.description">{{ project.description }}</span>
             </div>
           </div>
           <el-button type="primary" @click="router.push(`/projects/${project.id}/test-plans/create`)">
@@ -249,7 +249,10 @@ onMounted(async () => {
   margin-bottom: 4px;
 
   h2 { margin: 0; font-size: 20px; font-weight: 600; color: var(--app-text); }
-  .meta { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--app-text-muted); margin-top: 2px; }
+  .title-block { flex: 1; min-width: 0; }
+  .meta { display: flex; gap: 12px; font-size: 13px; color: var(--app-text-muted); margin-top: 2px; min-width: 0; }
+  .meta > * { flex-shrink: 0; }
+  .meta .desc { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mono { font-family: var(--app-font-mono); font-size: 12px; }
 }
 

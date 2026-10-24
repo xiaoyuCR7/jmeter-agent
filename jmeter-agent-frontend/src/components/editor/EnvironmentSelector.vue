@@ -111,13 +111,13 @@ function handleCopyEnv(env: EnvironmentInfo) {
     display: flex;
     align-items: center;
     gap: 4px;
-    background: var(--tavily-bg-page);
-    border: 1px solid var(--tavily-border);
-    border-radius: var(--tavily-radius-md);
+    background: var(--app-bg);
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
     padding: 4px 4px 4px 10px;
 
     .env-icon {
-      color: var(--tavily-text-secondary);
+      color: var(--app-text-secondary);
       font-size: 15px;
     }
 
@@ -132,14 +132,14 @@ function handleCopyEnv(env: EnvironmentInfo) {
 
     .env-vars-preview-trigger {
       cursor: pointer;
-      color: var(--tavily-text-secondary);
+      color: var(--app-text-secondary);
       margin-right: 4px;
-      &:hover { color: var(--tavily-primary); }
+      &:hover { color: var(--app-primary); }
     }
 
     .env-manage-btn {
-      color: var(--tavily-text-secondary);
-      &:hover { color: var(--tavily-primary); }
+      color: var(--app-text-secondary);
+      &:hover { color: var(--app-primary); }
     }
   }
 
@@ -150,7 +150,7 @@ function handleCopyEnv(env: EnvironmentInfo) {
     font-size: 12px;
 
     .env-url {
-      color: var(--tavily-text-secondary);
+      color: var(--app-text-secondary);
       max-width: 200px;
       overflow: hidden;
       text-overflow: ellipsis;
@@ -158,7 +158,7 @@ function handleCopyEnv(env: EnvironmentInfo) {
     }
 
     .env-var-count {
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
     }
   }
 }
@@ -180,7 +180,7 @@ function handleCopyEnv(env: EnvironmentInfo) {
 
   .env-option-url {
     font-size: 12px;
-    color: var(--tavily-text-secondary);
+    color: var(--app-text-secondary);
     display: block;
     max-width: 260px;
     overflow: hidden;
@@ -190,8 +190,8 @@ function handleCopyEnv(env: EnvironmentInfo) {
 
   .env-option-actions {
     .el-button {
-      color: var(--tavily-text-muted);
-      &:hover { color: var(--tavily-primary); }
+      color: var(--app-text-muted);
+      &:hover { color: var(--app-primary); }
     }
   }
 }
@@ -204,7 +204,7 @@ function handleCopyEnv(env: EnvironmentInfo) {
     padding: 8px 12px;
     font-size: 13px;
     font-weight: 500;
-    border-bottom: 1px solid var(--tavily-border);
+    border-bottom: 1px solid var(--app-border);
     margin-bottom: 4px;
   }
 
@@ -218,17 +218,17 @@ function handleCopyEnv(env: EnvironmentInfo) {
     justify-content: space-between;
     padding: 6px 12px;
     font-size: 12px;
-    &:hover { background: var(--tavily-primary-bg); }
+    &:hover { background: var(--app-primary-soft); }
   }
 
   .preview-var-name {
     font-weight: 500;
-    color: var(--tavily-text-primary);
+    color: var(--app-text);
     min-width: 100px;
   }
 
   .preview-var-value {
-    color: var(--tavily-text-secondary);
+    color: var(--app-text-secondary);
     flex: 1;
     text-align: right;
     overflow: hidden;
@@ -240,7 +240,7 @@ function handleCopyEnv(env: EnvironmentInfo) {
   .preview-empty {
     padding: 16px 12px;
     text-align: center;
-    color: var(--tavily-text-muted);
+    color: var(--app-text-muted);
     font-size: 12px;
   }
 }

@@ -3,14 +3,11 @@
     <!-- Toolbar -->
     <div class="editor-toolbar">
       <div class="toolbar-left">
-        <el-button @click="goBack" text>
+        <el-button @click="goBack" text :title="projectName">
           <el-icon><ArrowLeft /></el-icon> {{ t('editor.back') }}
         </el-button>
         <el-divider direction="vertical" />
-        <span class="plan-name">{{ planName }}</span>
-        <el-tag v-if="projectId" size="small" type="info" style="margin-left: 8px">
-          {{ projectName || projectId }}
-        </el-tag>
+        <span class="plan-name" :title="planName">{{ planName }}</span>
         <el-segmented :model-value="viewMode" :options="viewModeOptions" size="small" class="view-switch"
           :disabled="switchingView" @change="switchView" />
       </div>
@@ -1605,52 +1602,61 @@ function goToProjectSettings() {
 </script>
 
 <style scoped lang="scss">
+// Full-bleed under the 52px top bar: cancel the layout's content padding (20px 24px, 16px on phones).
 .test-case-editor {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--layout-offset, 132px));
+  height: calc(100vh - 52px);
   min-height: 480px;
-  margin: -16px -16px;
+  margin: -20px -24px;
 
-  @media (min-width: 769px) {
-    margin: -20px -24px;
-  }
-
-  @media (min-width: 1025px) {
-    margin: -24px -28px;
+  @media (max-width: 768px) {
+    margin: -16px;
   }
 }
+
+.view-switch { margin-left: 8px; }
+.tree-mode { flex: 1; min-height: 0; }
 
 .editor-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--tavily-border);
-  background: var(--tavily-bg-card);
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: 12px;
+
+  // One row on desktop: the plan name gives way first.
+  @media (min-width: 1024px) {
+    flex-wrap: nowrap;
+  }
 
   .toolbar-left {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
+    flex: 1 1 auto;
+
+    .view-switch { flex-shrink: 0; }
 
     .plan-name {
       font-size: 15px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       min-width: 0;
     }
   }
-  .toolbar-center { display: flex; align-items: center; min-width: 0; }
+  .toolbar-center { display: flex; align-items: center; min-width: 0; flex-shrink: 0; }
   .toolbar-right {
     display: flex;
+    flex-shrink: 0;
     gap: 8px;
     flex-wrap: wrap;
     min-width: 0;
@@ -1675,8 +1681,8 @@ function goToProjectSettings() {
   min-width: 220px;
   max-width: 35%;
   flex-shrink: 0;
-  border-right: 1px solid var(--tavily-border);
-  background: var(--tavily-bg-sidebar);
+  border-right: 1px solid var(--app-border);
+  background: var(--app-surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1685,7 +1691,7 @@ function goToProjectSettings() {
     width: 100%;
     max-width: none;
     border-right: none;
-    border-bottom: 1px solid var(--tavily-border);
+    border-bottom: 1px solid var(--app-border);
   }
 }
 
@@ -1694,7 +1700,7 @@ function goToProjectSettings() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--tavily-bg-page);
+  background: var(--app-bg);
   min-width: 0;
 
   .no-selection {
@@ -1709,8 +1715,8 @@ function goToProjectSettings() {
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
-    background: var(--tavily-bg-card);
-    border-bottom: 1px solid var(--tavily-border);
+    background: var(--app-surface);
+    border-bottom: 1px solid var(--app-border);
     flex-shrink: 0;
     min-height: 44px;
     flex-wrap: wrap;
@@ -1726,7 +1732,7 @@ function goToProjectSettings() {
       .main-view-tab {
         padding: 12px 16px;
         font-size: 14px;
-        color: var(--tavily-text-secondary);
+        color: var(--app-text-secondary);
         cursor: pointer;
         border-bottom: 2px solid transparent;
         transition: all 0.15s;
@@ -1738,11 +1744,11 @@ function goToProjectSettings() {
           font-size: 13px;
         }
 
-        &:hover { color: var(--tavily-primary); }
+        &:hover { color: var(--app-primary); }
 
         &.active {
-          color: var(--tavily-primary);
-          border-bottom-color: var(--tavily-primary);
+          color: var(--app-primary);
+          border-bottom-color: var(--app-primary);
           font-weight: 500;
         }
       }
@@ -1813,7 +1819,7 @@ function goToProjectSettings() {
       .section-label {
         font-size: 13px;
         font-weight: 500;
-        color: var(--tavily-text-secondary);
+        color: var(--app-text-secondary);
         margin-bottom: 12px;
       }
     }
@@ -1859,15 +1865,15 @@ function goToProjectSettings() {
     flex-wrap: wrap;
     gap: 8px;
     padding: 12px 16px;
-    background: var(--tavily-bg-card);
-    border-bottom: 1px solid var(--tavily-border);
+    background: var(--app-surface);
+    border-bottom: 1px solid var(--app-border);
     flex-shrink: 0;
 
     .method-select {
       width: 100px;
       min-width: 100px;
       :deep(.el-input__wrapper) {
-        border-radius: var(--tavily-radius-md) 0 0 var(--tavily-radius-md);
+        border-radius: var(--app-radius) 0 0 var(--app-radius);
         border-right: none;
       }
     }
@@ -1877,17 +1883,17 @@ function goToProjectSettings() {
       display: flex;
       align-items: center;
       border: 1px solid var(--el-border-color);
-      border-radius: 0 var(--tavily-radius-md) var(--tavily-radius-md) 0;
+      border-radius: 0 var(--app-radius) var(--app-radius) 0;
       overflow: hidden;
       height: 32px;
       min-width: 180px;
 
       .url-prefix {
         font-size: 12px;
-        color: var(--tavily-text-muted);
+        color: var(--app-text-muted);
         padding: 0 10px;
-        background: var(--tavily-bg-sidebar);
-        border-right: 1px solid var(--tavily-border);
+        background: var(--app-surface);
+        border-right: 1px solid var(--app-border);
         line-height: 32px;
         white-space: nowrap;
         max-width: 180px;
@@ -1906,7 +1912,7 @@ function goToProjectSettings() {
       }
     }
 
-    .el-button { margin-left: 0; width: auto; border-radius: var(--tavily-radius-md); }
+    .el-button { margin-left: 0; width: auto; border-radius: var(--app-radius); }
   }
 
   .request-tabs {
@@ -1918,8 +1924,8 @@ function goToProjectSettings() {
     :deep(.el-tabs__header) {
       margin: 0;
       padding: 0 16px;
-      background: var(--tavily-bg-card);
-      border-bottom: 1px solid var(--tavily-border);
+      background: var(--app-surface);
+      border-bottom: 1px solid var(--app-border);
     }
 
     :deep(.el-tabs__nav-wrap::after) { display: none; }
@@ -1945,9 +1951,9 @@ function goToProjectSettings() {
     padding: 0 6px;
     font-size: 11px;
     line-height: 18px;
-    border-radius: var(--radius-sm);
-    background: var(--tavily-primary-bg);
-    color: var(--tavily-primary);
+    border-radius: var(--app-radius);
+    background: var(--app-primary-soft);
+    color: var(--app-primary);
     font-weight: 500;
   }
 
@@ -1964,20 +1970,20 @@ function goToProjectSettings() {
   :deep(.el-textarea__inner) {
     font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
     font-size: 13px;
-    background: var(--tavily-bg-sidebar);
-    color: var(--tavily-text-primary);
+    background: var(--app-surface);
+    color: var(--app-text);
   }
 }
 
 .thread-group-config,
 .csv-dataset-config {
   padding: 12px;
-  border-bottom: 1px solid var(--tavily-border);
+  border-bottom: 1px solid var(--app-border);
 
   .config-header {
     font-size: 13px;
     font-weight: 500;
-    color: var(--tavily-text-primary);
+    color: var(--app-text);
     margin-bottom: 10px;
     display: flex;
     align-items: center;
@@ -1998,7 +2004,7 @@ function goToProjectSettings() {
 
   .csv-hint {
     font-size: 11px;
-    color: var(--tavily-text-secondary);
+    color: var(--app-text-secondary);
     margin-top: 4px;
   }
 }

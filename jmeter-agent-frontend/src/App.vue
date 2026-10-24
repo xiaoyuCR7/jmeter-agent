@@ -22,21 +22,4 @@ body,
 #app {
   height: 100%;
 }
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-  background: var(--tavily-bg-gradient);
-  color: var(--tavily-text-regular);
-  font-size: 14px;
-  line-height: 1.6;
-}
-
-/* Selection color — Tavily lavender accent */
-::selection {
-  background-color: rgba(129, 127, 255, 0.2);
-  color: var(--tavily-text-primary);
-}
 </style>

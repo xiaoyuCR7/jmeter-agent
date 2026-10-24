@@ -154,14 +154,11 @@ async function remove() {
 
 <style scoped lang="scss">
 .block-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.hint { color: var(--tavily-text-muted); font-size: 12px; }
+.hint { color: var(--app-text-muted); font-size: 12px; }
 .dirty { margin-left: 8px; }
 .presets { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 .mono :deep(input) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
 .num { width: 100%; }
 .add { margin-top: 8px; }
 .actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
-// Dense editable tables: the app's glass input border is too faint on white cards.
-:deep(.el-input__wrapper), :deep(.el-textarea__inner) { box-shadow: 0 0 0 1px var(--tavily-border-blue) inset !important; }
-:deep(.el-input__wrapper.is-focus), :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 2px var(--tavily-primary) inset !important; }
 </style>

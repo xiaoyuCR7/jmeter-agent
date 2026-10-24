@@ -260,7 +260,7 @@ async function remove() {
 <style scoped lang="scss">
 .requirements-panel { display: flex; flex-direction: column; gap: 16px; }
 .block-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
-.hint { color: var(--tavily-text-muted); font-size: 12px; }
+.hint { color: var(--app-text-muted); font-size: 12px; }
 .dirty { margin-left: 8px; }
 .extract-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .file-pick input { display: none; }
@@ -273,12 +273,9 @@ async function remove() {
 .add { margin-top: 8px; }
 h4 { margin: 20px 0 10px; font-size: 14px; }
 .profile { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-.profile label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--tavily-text-secondary); }
+.profile label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--app-text-secondary); }
 .profile :deep(.el-input-number) { width: 100%; }
 .assumptions { margin-top: 16px; ul { margin: 6px 0 0; padding-left: 18px; } }
 .save-actions { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 768px) { .model-select { margin-left: 0; width: 100%; } }
-// Dense editable tables: the app's glass input border is too faint on white cards.
-:deep(.el-input__wrapper), :deep(.el-textarea__inner) { box-shadow: 0 0 0 1px var(--tavily-border-blue) inset !important; }
-:deep(.el-input__wrapper.is-focus), :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 2px var(--tavily-primary) inset !important; }
 </style>

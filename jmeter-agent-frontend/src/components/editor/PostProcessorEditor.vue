@@ -315,13 +315,13 @@ function removeExtractor(idx: number) {
     .editor-title {
       font-size: 14px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
     }
     .editor-desc {
       display: block;
       margin-top: 4px;
       font-size: 12px;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
     }
   }
 
@@ -330,21 +330,21 @@ function removeExtractor(idx: number) {
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       font-size: 13px;
       line-height: 1.5;
-      background: var(--tavily-bg-sidebar);
-      border-color: var(--tavily-border);
-      color: var(--tavily-text-primary);
+      background: var(--app-surface);
+      border-color: var(--app-border);
+      color: var(--app-text);
     }
   }
 
   .extractors-section {
     margin-top: 20px;
     padding-top: 16px;
-    border-top: 1px solid var(--tavily-border);
+    border-top: 1px solid var(--app-border);
 
     .section-label {
       font-size: 13px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
       margin-bottom: 8px;
     }
 
@@ -352,7 +352,7 @@ function removeExtractor(idx: number) {
       border: none;
       .el-collapse-item__header {
         font-size: 13px;
-        color: var(--tavily-text-secondary);
+        color: var(--app-text-secondary);
         border: none;
         background: transparent;
         padding: 4px 0;
@@ -383,7 +383,7 @@ function removeExtractor(idx: number) {
 
     .quick-label {
       font-size: 12px;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
       margin-right: 4px;
     }
   }

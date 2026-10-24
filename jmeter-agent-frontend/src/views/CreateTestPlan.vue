@@ -540,7 +540,7 @@ async function applyRequirementLoadProfile() {
       margin-bottom: 20px;
       font-size: 18px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
 
       @media (min-width: 769px) {
         margin-bottom: 24px;
@@ -560,19 +560,19 @@ async function applyRequirementLoadProfile() {
       transition: all 0.2s ease;
       text-align: center;
       padding: 22px 16px;
-      background: var(--tavily-bg-card);
-      border: 1px solid var(--tavily-border);
-      border-radius: var(--tavily-radius-xl);
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-lg);
 
       &:hover, &.active {
-        border-color: var(--tavily-border-blue);
-        box-shadow: var(--tavily-shadow-md);
+        border-color: var(--app-border-strong);
+        box-shadow: var(--app-shadow);
         transform: translateY(-1px);
       }
 
       &.active {
-        background: var(--tavily-primary-bg);
-        border-color: var(--tavily-primary);
+        background: var(--app-primary-soft);
+        border-color: var(--app-primary);
       }
 
       .template-icon {
@@ -584,14 +584,14 @@ async function applyRequirementLoadProfile() {
         font-size: 15px;
         font-weight: 500;
         margin-bottom: 6px;
-        color: var(--tavily-text-primary);
+        color: var(--app-text);
         overflow-wrap: break-word;
         word-break: normal;
       }
 
       .template-desc {
         font-size: 13px;
-        color: var(--tavily-text-secondary);
+        color: var(--app-text-secondary);
         line-height: 1.4;
         overflow-wrap: break-word;
         word-break: normal;
@@ -603,9 +603,9 @@ async function applyRequirementLoadProfile() {
     margin-bottom: 16px;
 
     :deep(.el-card) {
-      background: var(--tavily-bg-card);
-      border: 1px solid var(--tavily-border);
-      border-radius: var(--tavily-radius-xl);
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-lg);
     }
 
     .endpoint-header {
@@ -615,7 +615,7 @@ async function applyRequirementLoadProfile() {
       flex-wrap: wrap;
       gap: 12px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
     }
   }
 
@@ -654,7 +654,7 @@ async function applyRequirementLoadProfile() {
     gap: 10px;
     margin-top: 24px;
     padding-top: 24px;
-    border-top: 1px solid var(--tavily-border);
+    border-top: 1px solid var(--app-border);
 
     @media (max-width: 768px) {
       justify-content: stretch;
@@ -673,7 +673,7 @@ async function applyRequirementLoadProfile() {
 
     .generating-text {
       margin-top: 20px;
-      color: var(--tavily-text-secondary);
+      color: var(--app-text-secondary);
       font-size: 14px;
     }
   }

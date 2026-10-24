@@ -505,8 +505,8 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   padding: 12px 20px;
-  border-bottom: 1px solid var(--tavily-border);
-  background: var(--tavily-bg-card);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -521,7 +521,7 @@ onMounted(async () => {
 .plan-name {
   font-size: 16px;
   font-weight: 500;
-  color: var(--tavily-text-primary);
+  color: var(--app-text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -545,7 +545,7 @@ onMounted(async () => {
   display: flex;
   flex: 1;
   overflow: hidden;
-  background: var(--tavily-bg-page);
+  background: var(--app-bg);
 
   @media (max-width: 768px) {
     flex-direction: column;
@@ -557,8 +557,8 @@ onMounted(async () => {
   width: 300px;
   min-width: 220px;
   max-width: 35%;
-  border-right: 1px solid var(--tavily-border);
-  background: var(--tavily-bg-sidebar);
+  border-right: 1px solid var(--app-border);
+  background: var(--app-surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -567,7 +567,7 @@ onMounted(async () => {
     width: 100%;
     max-width: none;
     border-right: none;
-    border-bottom: 1px solid var(--tavily-border);
+    border-bottom: 1px solid var(--app-border);
   }
 }
 
@@ -575,9 +575,9 @@ onMounted(async () => {
   padding: 12px 16px;
   font-weight: 500;
   font-size: 13px;
-  color: var(--tavily-text-secondary);
-  border-bottom: 1px solid var(--tavily-border);
-  background: var(--tavily-bg-sidebar);
+  color: var(--app-text-secondary);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   display: flex;
@@ -589,7 +589,7 @@ onMounted(async () => {
   overflow-y: auto;
   background: transparent;
   padding: 8px;
-  color: var(--tavily-text-regular);
+  color: var(--app-text);
 }
 
 .tree-node {
@@ -610,7 +610,7 @@ onMounted(async () => {
 
 .node-label {
   flex: 1;
-  color: var(--tavily-text-regular);
+  color: var(--app-text);
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -622,7 +622,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--tavily-bg-page);
+  background: var(--app-bg);
 }
 
 .property-content {
@@ -637,7 +637,7 @@ onMounted(async () => {
 
 :deep(.el-form-item__label) {
   font-weight: 500;
-  color: var(--tavily-text-secondary);
+  color: var(--app-text-secondary);
   font-size: 13px;
 }
 </style>

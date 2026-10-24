@@ -9,14 +9,14 @@
       </div>
       <ol class="steps">
         <li v-for="(step, i) in steps" :key="step.key" :class="{ done: step.done }">
-          <span class="step-index">
-            <el-icon v-if="step.done"><Check /></el-icon>
-            <template v-else>{{ i + 1 }}</template>
-          </span>
-          <div class="step-body">
-            <div class="step-title">{{ step.title }}</div>
-            <div class="step-status">{{ step.status }}</div>
+          <div class="step-top">
+            <span class="step-index">
+              <el-icon v-if="step.done"><Check /></el-icon>
+              <template v-else>{{ i + 1 }}</template>
+            </span>
+            <span class="step-title">{{ step.title }}</span>
           </div>
+          <p class="step-status">{{ step.status }}</p>
           <el-button size="small" :type="step.done ? 'default' : 'primary'" :plain="!step.done" @click="router.push(step.to)">
             {{ step.done ? L('查看', 'View') : step.action }}
           </el-button>
@@ -120,20 +120,28 @@ const steps = computed(() => {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+
+  @media (max-width: 1200px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @media (max-width: 560px) { grid-template-columns: 1fr; }
 
   li {
     display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 12px 14px;
     border: 1px solid var(--app-border);
     border-radius: var(--app-radius-lg);
     background: var(--app-surface);
 
+    &.done { background: var(--app-surface-muted); }
     &.done .step-index { background: var(--app-success-soft); color: var(--app-success); border-color: transparent; }
+    .el-button { margin-top: auto; }
   }
+
+  .step-top { display: flex; align-items: center; gap: 8px; }
 
   .step-index {
     width: 26px;
@@ -147,9 +155,8 @@ const steps = computed(() => {
     font-size: 13px;
     font-weight: 600;
   }
-  .step-body { flex: 1; min-width: 0; }
-  .step-title { font-weight: 500; color: var(--app-text); }
-  .step-status { font-size: 12px; color: var(--app-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step-title { font-weight: 600; color: var(--app-text); }
+  .step-status { margin: 0 0 4px; font-size: 12px; line-height: 1.5; color: var(--app-text-muted); min-height: 36px; }
 }
 
 .more { font-size: 13px; color: var(--app-primary); text-decoration: none; }

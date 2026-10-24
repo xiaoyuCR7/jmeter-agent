@@ -224,31 +224,31 @@ onMounted(loadStatus)
     box-sizing: border-box;
   }
 
-  .page-desc { color: var(--tavily-text-muted); margin-bottom: 20px; font-size: 14px; }
+  .page-desc { color: var(--app-text-muted); margin-bottom: 20px; font-size: 14px; }
 
   .header-icon {
     font-size: 18px;
     vertical-align: middle;
     margin-right: 2px;
-    color: var(--tavily-text-secondary);
+    color: var(--app-text-secondary);
   }
 
   .stats-row { margin-bottom: 20px; }
-  .stat-card { text-align: center; border-radius: var(--tavily-radius-xl);
-    .stat-val { font-size: 28px; font-weight: 700; color: var(--tavily-text-primary);
+  .stat-card { text-align: center; border-radius: var(--app-radius-lg);
+    .stat-val { font-size: 28px; font-weight: 700; color: var(--app-text);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
       &.online { color: #16A34A; } &.offline { color: #DC2626; }
     }
-    .stat-label { font-size: 12px; color: var(--tavily-text-muted); margin-top: 4px; }
+    .stat-label { font-size: 12px; color: var(--app-text-muted); margin-top: 4px; }
   }
 
-  .config-card { margin-bottom: 20px; border-radius: var(--tavily-radius-xl);
+  .config-card { margin-bottom: 20px; border-radius: var(--app-radius-lg);
     .tab-content { padding: 4px 0;
-      p { font-size: 13px; color: var(--tavily-text-secondary); margin: 8px 0; }
-      .hint { font-size: 12px; color: var(--tavily-text-muted); margin-top: 12px;
-        code { background: var(--tavily-bg-card); padding: 1px 5px; border-radius: var(--radius-sm); font-size: 11px; }
+      p { font-size: 13px; color: var(--app-text-secondary); margin: 8px 0; }
+      .hint { font-size: 12px; color: var(--app-text-muted); margin-top: 12px;
+        code { background: var(--app-surface); padding: 1px 5px; border-radius: var(--app-radius); font-size: 11px; }
       }
     }
 
@@ -266,7 +266,7 @@ onMounted(loadStatus)
   }
 
   .code-block {
-    background: #1e1e2e; border-radius: var(--tavily-radius-lg); overflow: hidden; margin: 8px 0;
+    background: #1e1e2e; border-radius: var(--app-radius-lg); overflow: hidden; margin: 8px 0;
     .code-header { display: flex; justify-content: space-between; align-items: center;
       padding: 8px 14px; background: #2d2d3d; color: #cdd6f4; font-size: 12px;
       .copy-btn { width: auto; flex-shrink: 0; }
@@ -277,13 +277,13 @@ onMounted(loadStatus)
   }
 
   .url-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; padding: 12px;
-    background: var(--tavily-bg-card); border-radius: var(--tavily-radius-lg); border: 1px solid var(--tavily-border);
-    .url-label { font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--tavily-text-secondary); flex-shrink: 0; }
+    background: var(--app-surface); border-radius: var(--app-radius-lg); border: 1px solid var(--app-border);
+    .url-label { font-size: 13px; font-weight: 600; white-space: nowrap; color: var(--app-text-secondary); flex-shrink: 0; }
     .url-input { flex: 1; min-width: 120px; max-width: 100%; }
     .url-btn { width: auto; flex-shrink: 0; }
   }
 
-  .tools-card { margin-bottom: 20px; border-radius: var(--tavily-radius-xl); }
+  .tools-card { margin-bottom: 20px; border-radius: var(--app-radius-lg); }
 
   @media (max-width: 768px) {
     .el-tabs {

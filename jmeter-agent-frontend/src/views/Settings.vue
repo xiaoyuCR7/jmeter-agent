@@ -476,15 +476,8 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .settings {
-  padding: 0 16px;
-
-  :deep(.el-card) {
-    border-radius: var(--tavily-radius-xl);
-  }
-
-  @media (min-width: 769px) {
-    padding: 0;
-  }
+  max-width: 960px;
+  margin: 0 auto;
 
   :deep(.el-dialog__body) {
     padding: 24px;
@@ -522,7 +515,7 @@ onUnmounted(() => {
     justify-content: space-between;
     align-items: center;
     font-weight: 500;
-    color: var(--tavily-text-primary);
+    color: var(--app-text);
     flex-wrap: wrap;
     gap: 12px;
 
@@ -540,7 +533,7 @@ onUnmounted(() => {
       display: flex;
       justify-content: space-between;
       padding: 12px 0;
-      border-bottom: 1px solid var(--tavily-border);
+      border-bottom: 1px solid var(--app-border);
       align-items: flex-start;
       flex-wrap: wrap;
       gap: 8px;
@@ -559,7 +552,7 @@ onUnmounted(() => {
       }
 
       .label {
-        color: var(--tavily-text-secondary);
+        color: var(--app-text-secondary);
         font-size: 14px;
         flex-shrink: 0;
         width: 100%;
@@ -571,7 +564,7 @@ onUnmounted(() => {
 
       .value {
         font-weight: 500;
-        color: var(--tavily-text-primary);
+        color: var(--app-text);
         max-width: 100%;
         text-align: left;
         overflow-wrap: break-word;
@@ -602,14 +595,14 @@ onUnmounted(() => {
   }
 
   .hint {
-    color: var(--tavily-text-secondary);
+    color: var(--app-text-secondary);
     font-size: 13px;
     line-height: 1.5;
   }
 
   .form-tip {
     font-size: 12px;
-    color: var(--tavily-text-muted);
+    color: var(--app-text-muted);
     line-height: 1.4;
     margin-top: 4px;
   }
@@ -623,7 +616,7 @@ onUnmounted(() => {
     gap: 12px;
 
     .theme-label {
-      color: var(--tavily-text-secondary);
+      color: var(--app-text-secondary);
       font-size: 14px;
     }
   }

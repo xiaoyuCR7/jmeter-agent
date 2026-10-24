@@ -20,7 +20,7 @@
     <div class="response-body">
       <template v-if="!response">
         <div class="response-placeholder">
-          <el-icon size="40" color="var(--tavily-text-muted)"><Monitor /></el-icon>
+          <el-icon size="40" color="var(--app-text-muted)"><Monitor /></el-icon>
           <p>{{ t('editor.responsePanel.clickSend') }}</p>
         </div>
       </template>
@@ -79,15 +79,15 @@ function formatSize(bytes: number) {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--tavily-bg-card);
-  border-top: 1px solid var(--tavily-border);
+  background: var(--app-surface);
+  border-top: 1px solid var(--app-border);
 
   .response-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 16px;
-    border-bottom: 1px solid var(--tavily-border);
+    border-bottom: 1px solid var(--app-border);
     min-height: 40px;
     flex-shrink: 0;
     flex-wrap: wrap;
@@ -100,15 +100,15 @@ function formatSize(bytes: number) {
       .response-tab {
         padding: 10px 12px;
         font-size: 13px;
-        color: var(--tavily-text-secondary);
+        color: var(--app-text-secondary);
         cursor: pointer;
         border-bottom: 2px solid transparent;
         transition: all 0.15s;
 
-        &:hover { color: var(--tavily-primary); }
+        &:hover { color: var(--app-primary); }
         &.active {
-          color: var(--tavily-primary);
-          border-bottom-color: var(--tavily-primary);
+          color: var(--app-primary);
+          border-bottom-color: var(--app-primary);
           font-weight: 500;
         }
       }
@@ -119,7 +119,7 @@ function formatSize(bytes: number) {
       align-items: center;
       gap: 12px;
       font-size: 12px;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
 
       .meta-item { font-family: monospace; }
     }
@@ -137,7 +137,7 @@ function formatSize(bytes: number) {
     align-items: center;
     justify-content: center;
     height: 100%;
-    color: var(--tavily-text-muted);
+    color: var(--app-text-muted);
     font-size: 13px;
     gap: 8px;
 
@@ -153,7 +153,7 @@ function formatSize(bytes: number) {
     white-space: pre-wrap;
     word-break: normal;
     overflow-wrap: break-word;
-    color: var(--tavily-text-primary);
+    color: var(--app-text);
   }
 }
 </style>

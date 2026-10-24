@@ -141,10 +141,10 @@ function handleCommand(cmd: string, ep: EndpointItem) {
     justify-content: space-between;
     align-items: center;
     padding: 12px 14px;
-    border-bottom: 1px solid var(--tavily-border);
+    border-bottom: 1px solid var(--app-border);
     font-size: 13px;
     font-weight: 500;
-    color: var(--tavily-text-primary);
+    color: var(--app-text);
     text-transform: uppercase;
     letter-spacing: 0.03em;
   }
@@ -159,14 +159,14 @@ function handleCommand(cmd: string, ep: EndpointItem) {
     display: flex;
     align-items: center;
     padding: 10px 10px;
-    border-radius: var(--tavily-radius-md);
+    border-radius: var(--app-radius);
     cursor: pointer;
     transition: all 0.12s ease;
     margin-bottom: 3px;
     gap: 10px;
 
     &:hover {
-      background: var(--tavily-primary-bg);
+      background: var(--app-primary-soft);
 
       .ep-actions {
         opacity: 1;
@@ -178,7 +178,7 @@ function handleCommand(cmd: string, ep: EndpointItem) {
     }
 
     &.active {
-      background: var(--tavily-primary);
+      background: var(--app-primary);
       .ep-name, .ep-path { color: #fff; }
       .method-badge {
         box-shadow: 0 0 0 2px rgba(255,255,255,0.3);
@@ -192,21 +192,21 @@ function handleCommand(cmd: string, ep: EndpointItem) {
     }
 
     &.drag-over {
-      border: 2px dashed var(--tavily-primary);
-      background: var(--tavily-primary-bg);
+      border: 2px dashed var(--app-primary);
+      background: var(--app-primary-soft);
     }
 
     .ep-drag-handle {
       opacity: 0;
       cursor: grab;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
       font-size: 14px;
       padding: 2px;
       transition: opacity 0.12s;
       flex-shrink: 0;
 
       &:hover {
-        color: var(--tavily-primary);
+        color: var(--app-primary);
       }
 
       &:active {
@@ -225,7 +225,7 @@ function handleCommand(cmd: string, ep: EndpointItem) {
       .ep-name {
         font-size: 13px;
         font-weight: 500;
-        color: var(--tavily-text-primary);
+        color: var(--app-text);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -234,7 +234,7 @@ function handleCommand(cmd: string, ep: EndpointItem) {
 
       .ep-path {
         font-size: 11px;
-        color: var(--tavily-text-muted);
+        color: var(--app-text-muted);
         font-family: monospace;
         white-space: nowrap;
         overflow: hidden;
@@ -252,7 +252,7 @@ function handleCommand(cmd: string, ep: EndpointItem) {
   .method-badge {
     display: inline-block;
     padding: 2px 8px;
-    border-radius: var(--radius-sm);
+    border-radius: var(--app-radius);
     font-size: 11px;
     font-weight: 600;
     letter-spacing: 0.02em;

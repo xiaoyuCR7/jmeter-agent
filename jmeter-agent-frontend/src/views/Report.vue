@@ -12,7 +12,7 @@
             <router-link :to="`/projects/${report.project_id}`">{{ L('所属项目', 'Project') }}</router-link>
           </div>
         </div>
-        <div class="head-actions">
+        <div class="head-actions button-row">
           <el-button v-if="report.raw_data_path" @click="downloadJTL">{{ t('report.downloadJtl') }}</el-button>
           <el-button v-if="report.html_report_path" @click="openHtmlReport">{{ t('report.viewHtml') }}</el-button>
           <el-button v-if="report.ai_analysis" @click="downloadAnalysis">{{ L('下载 AI 分析', 'Download AI analysis') }}</el-button>

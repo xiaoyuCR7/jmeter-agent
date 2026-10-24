@@ -56,7 +56,7 @@
             <template #header>
               <div class="env-card-header">
                 <div class="env-card-title">
-                  <el-icon v-if="activeEnvId === env.id" color="var(--tavily-primary)" size="16">
+                  <el-icon v-if="activeEnvId === env.id" color="var(--app-primary)" size="16">
                     <CircleCheckFilled />
                   </el-icon>
                   <span>{{ env.name }}</span>

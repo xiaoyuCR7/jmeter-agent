@@ -34,3 +34,14 @@
 .num {
   font-variant-numeric: tabular-nums;
 }
+
+/* Button rows laid out with flex gap: drop Element Plus's sibling margin so wrapped rows line up. */
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.button-row > .el-button + .el-button {
+  margin-left: 0;
+}

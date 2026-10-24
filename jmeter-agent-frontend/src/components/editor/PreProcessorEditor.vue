@@ -92,13 +92,13 @@ function insertSnippet(key: string) {
     .editor-title {
       font-size: 14px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
     }
     .editor-desc {
       display: block;
       margin-top: 4px;
       font-size: 12px;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
     }
   }
 
@@ -107,9 +107,9 @@ function insertSnippet(key: string) {
       font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
       font-size: 13px;
       line-height: 1.5;
-      background: var(--tavily-bg-sidebar);
-      border-color: var(--tavily-border);
-      color: var(--tavily-text-primary);
+      background: var(--app-surface);
+      border-color: var(--app-border);
+      color: var(--app-text);
     }
   }
 
@@ -122,7 +122,7 @@ function insertSnippet(key: string) {
 
     .quick-label {
       font-size: 12px;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
       margin-right: 4px;
     }
 

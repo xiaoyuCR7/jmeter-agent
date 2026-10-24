@@ -199,13 +199,13 @@ function removeAssertion(index: number) {
     .tab-title {
       font-size: 14px;
       font-weight: 500;
-      color: var(--tavily-text-primary);
+      color: var(--app-text);
     }
     .tab-desc {
       display: block;
       margin-top: 4px;
       font-size: 12px;
-      color: var(--tavily-text-muted);
+      color: var(--app-text-muted);
     }
   }
 
@@ -215,9 +215,9 @@ function removeAssertion(index: number) {
 
   .assertions-list {
     .assertion-card {
-      background: var(--tavily-bg-page);
-      border: 1px solid var(--tavily-border);
-      border-radius: var(--tavily-radius-lg);
+      background: var(--app-bg);
+      border: 1px solid var(--app-border);
+      border-radius: var(--app-radius-lg);
       padding: 12px 16px;
       margin-bottom: 10px;
 
@@ -230,7 +230,7 @@ function removeAssertion(index: number) {
         .assertion-index {
           font-size: 13px;
           font-weight: 500;
-          color: var(--tavily-text-secondary);
+          color: var(--app-text-secondary);
         }
       }
     }

@@ -5,9 +5,6 @@
         <h3>{{ L('测试计划', 'Test plans') }}</h3>
         <p class="hint">{{ L('新建时会按性能需求里的并发和时长预填', 'New plans are prefilled from the requirements load profile') }}</p>
       </div>
-      <el-button type="primary" @click="router.push(`/projects/${projectId}/test-plans/create`)">
-        <el-icon><Plus /></el-icon> {{ L('新建测试计划', 'New test plan') }}
-      </el-button>
     </div>
 
     <el-table :data="plans" v-loading="loading" :empty-text="L('还没有测试计划', 'No test plans yet')"
@@ -54,7 +51,7 @@
 import { ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, VideoPlay, MoreFilled } from '@element-plus/icons-vue'
+import { VideoPlay, MoreFilled } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import { useI18n } from '@/composables/useI18n'
 import { formatTime, testTypeText } from '@/utils/format'
