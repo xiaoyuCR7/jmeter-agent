@@ -1,490 +1,198 @@
+<div align="center">
+
 # JMeter Agent
 
-AI 驱动的 JMeter 性能测试平台 —— 支持多 AI 模型、自动生成测试计划、智能分析报告、MCP 协议集成
+**Turn a performance test document into a pass / fail verdict you can defend.**
 
-> English version: [README-en.md](README-en.md)
+A local AI agent for Apache JMeter: it reads your requirements, builds the test plan, runs it,<br>
+and judges every run against the numbers you actually agreed on — with the evidence attached.
 
----
+**English** · [简体中文](README.zh-CN.md)
 
-## 目录
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
+![Vue](https://img.shields.io/badge/vue-3-42b883?logo=vuedotjs&logoColor=white)
+![JMeter](https://img.shields.io/badge/Apache%20JMeter-5.6.3-D22128?logo=apachejmeter&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-Streamable%20HTTP-6f42c1)
 
-- [项目概述](#项目概述)
-- [功能特性](#功能特性)
-- [技术栈](#技术栈)
-- [项目结构](#项目结构)
-- [安装指南](#安装指南)
-- [使用说明](#使用说明)
-- [配置详情](#配置详情)
-- [API 接口](#api-接口)
-- [CI/CD 集成](#cicd-集成)
-- [开发指南](#开发指南)
-- [故障排除](#故障排除)
-- [许可证](#许可证)
+<img src=".github/assets/report-evidence.png" alt="Test report: requirement verdicts with the measured value and the source quote for each requirement" width="100%">
 
----
+</div>
 
-## 项目概述
+## Why
 
-JMeter Agent 是一个本地部署、单人使用的 **需求驱动** 性能测试智能体，基于 Apache JMeter 5.6.3 构建。JMeter 运行时**不包含在仓库内**，执行真实压测前需自行准备（安装方式见[安装指南](#安装指南)）。
+Most "AI for load testing" tools stop at *"the P95 looks high, consider adding a cache."*
+That is not something you can sign off on. What you need after a run is:
 
-它把 AI 接入性能测试的完整闭环：
+- **Did we meet the requirements?** Each one, with the measured value and how far off it is.
+- **Did it get worse?** Compared with the baseline and the previous run, overall and per transaction.
+- **Why?** Server-side metrics for the exact test window, not guesses from client latency.
 
-1. **测试文档 → 性能需求**：AI 从需求说明 / 测试方案中抽取可量化的需求（TPS、P90/P95/P99、错误率、并发、时长），每条都附文档原文并自动核对，人工确认后保存。
-2. **需求 → 测试计划**：按需求中的负载模型预填并发与时长，AI 生成并校验 JMX。
-3. **执行 → 确定性证据**：每次压测自动产出三类证据：逐条需求达标判定、与基线及上一次执行的对比（整体 + 接口级）、Prometheus 服务端指标（饱和度、与响应时间的相关性）。
-4. **证据 → AI 分析**：AI 只能基于上述证据下结论，必须引用需求编号与具体指标；证据不足时以【假设】形式给出并说明验证方法。
+JMeter Agent produces those answers deterministically, then lets the AI explain them — and the AI must cite
+requirement IDs and measured values. Anything it cannot back up is labelled as a hypothesis, with a way to check it.
 
-所有证据同时通过 MCP 暴露，Claude Code、Cursor 等外部 AI 助手拿到的是与报告页面完全相同的数据。
+## How it works
 
----
-
-## 功能特性
-
-### 性能需求（闭环起点）
-
-- 粘贴文档或读取 .txt / .md 文件，AI 生成需求草稿；原文未在文档中找到的条目会标记"待核对"
-- 支持整体与接口级需求（按采样器名称匹配，取最差接口判定）
-- 负载模型（并发、加压、时长、目标 TPS）自动带入新建测试计划
-
-### 测试计划与执行
-
-- AI 生成测试计划（自然语言描述 / OpenAPI 导入），JMX 可视化树形编辑器
-- 多种测试模板：基准、高并发、阶梯加压、压力、稳定性、尖峰
-- 后台执行与 WebSocket 实时进度，可取消；同时运行的 JMeter 数量受限，避免互相干扰
-- SelfHeal：接口变化导致提取规则失效时自动定位并修复（需确认）
-
-### 证据与分析
-
-- 报告页"判定与证据"面板：需求达标表、历史对比、服务端指标与响应时间叠加曲线
-- JTL 流式解析：精确分位数、内存占用与样本数无关
-- 基线：报告页一键"设为基线"，基线保存指标快照，删除原执行也不受影响
-- Prometheus：内置主机 / JVM + HikariCP / MySQL 指标预设，按测试时间窗采集并缓存
-- AI 分析：事实表 + 证据驱动，数字校验、假设台账与历史知识库（RAG）
-
-### MCP 集成
-
-- Streamable HTTP（`/api/v1/mcp`，推荐）与旧版 SSE（`/api/v1/mcp/sse`）
-- 证据工具：`get_execution_evidence`、`extract_performance_requirements`、`save_performance_requirements`、`promote_execution_to_baseline` 等；写操作需在界面确认
-- 提示词：`requirements-to-plan`、`analyze-execution`
-
-### 本地单人模式
-
-- 无登录、无账号体系；服务只允许监听本机回环地址
-- 仍校验 Host 与 Origin，防止浏览器中的其它网站调用本地接口
-
----
-
-## 技术栈
-
-| 层 | 技术 |
-|----|------|
-| 后端 | Python 3.11+ / FastAPI / Uvicorn / SQLAlchemy 2.0 (async) / SQLite (aiosqlite) |
-| AI 接入 | openai SDK / anthropic SDK / 自定义 OpenAI 兼容适配器 |
-| 向量检索 | LanceDB（RAG 知识库） |
-| 前端 | Vue 3 / TypeScript / Vite 6 / Element Plus / Pinia / Vue Router / ECharts 6 |
-| 测试引擎 | Apache JMeter 5.6.3（需自行安装，见[安装指南](#安装指南)） |
-| 测试 | pytest（后端） / Vitest（前端） |
-
----
-
-## 项目结构
-
-```
-jmeter-agent/
-├── jmeter-agent-backend/         # 后端服务（Python / FastAPI）
-│   ├── app/
-│   │   ├── api/                  # API 路由（认证、测试计划/执行、AI、RAG、系统、MCP）
-│   │   ├── core/                 # 配置、i18n、通用工具
-│   │   ├── middleware/           # 本地模式 Host / Origin 校验
-│   │   ├── models/               # 数据库模型与 Pydantic 模式
-│   │   └── services/
-│   │       ├── ai/               # 模型适配、Agent、RAG、报告分析
-│   │       └── jmeter/           # 测试执行、JMX 构建/解析、SLA、调度
-│   ├── tests/                    # 后端测试（pytest）
-│   ├── requirements*.txt         # 依赖清单与锁文件
-│   └── .env.example              # 环境变量模板
-├── jmeter-agent-frontend/        # 前端应用（Vue 3 / TypeScript / Vite）
-│   ├── src/                      # 页面、组件、API 客户端、状态管理
-│   └── tests/                    # 前端测试（Vitest）
-├── .github/workflows/            # CI：质量门禁与性能门禁
-├── docs/                         # 项目文档（修复记录）
-├── start.bat / start.sh          # 一键启动脚本
-├── reqres-openapi.yaml           # OpenAPI 导入示例
-├── gitlab-ci-example.yml         # GitLab CI 集成示例
-└── LICENSE                       # Apache 2.0
+```mermaid
+flowchart LR
+    A["Test document<br/>(spec, test plan, API doc)"] -->|AI extracts,<br/>you review| B["Requirements<br/>P95 ≤ 1 s, errors ≤ 0.1%,<br/>500 users"]
+    B -->|load profile prefills| C["JMeter test plan<br/>(form or JMX tree)"]
+    C -->|run| D["Evidence<br/>verdicts · baseline diff ·<br/>Prometheus metrics"]
+    D -->|cited, not guessed| E["AI analysis"]
+    D -. same data .-> F["Claude Code / Cursor<br/>via MCP"]
 ```
 
-> **不包含在仓库中的目录**（由 `.gitignore` 排除）：
-> - `bin/`、`lib/` —— Apache JMeter 5.6.3 运行时，需按[安装指南](#安装指南)自行准备
-> - `backups/`、`rag_lancedb/`、`jmeter-agent-backend/test_plans/`、`jmeter-agent-backend/reports/` —— 运行时自动生成的备份、向量库与测试产物
+1. **Document → requirements.** Paste a spec or upload a file. AI drafts quantified requirements (P90/P95/P99, average, max, error rate, TPS) plus the load profile. Every item quotes its source sentence, and quotes that cannot be found in the document are flagged for review. Nothing is saved until you confirm.
+2. **Requirements → test plan.** New plans start from the documented concurrency, ramp-up and duration. Edit them in a form view or the full JMX tree.
+3. **Run → evidence.** Each run is judged requirement by requirement (transaction-level requirements use the worst matching sampler), compared with the active baseline and the previous run, and enriched with Prometheus metrics for the run window: saturation time and correlation with response time.
+4. **Evidence → analysis.** The AI analysis receives the same evidence and must ground its conclusions in it.
 
----
+## Features
 
-## 安装指南
+| | |
+|---|---|
+| **Requirement verdicts** | Overall and per-transaction requirements, a verdict banner on every report, gap percentages for failures, verified source quotes. |
+| **Start from a document** | One wizard for a requirements/API document or an OpenAPI URL; produces the project, test plans and a requirements draft. |
+| **Baselines that stay put** | One click on a report sets it as the baseline. The baseline keeps a metrics snapshot, so deleting old runs does not break comparisons. |
+| **Server-side evidence** | Prometheus presets for host (node_exporter), JVM + HikariCP and MySQL; collected per run window and cached. |
+| **Honest AI analysis** | Fact sheet, number validation, hypothesis ledger and a RAG knowledge base of past runs. DeepSeek, OpenAI, Claude, Qwen or any OpenAI-compatible endpoint. |
+| **MCP built in** | Streamable HTTP endpoint with evidence tools (`get_execution_evidence`, `extract_performance_requirements`, `promote_execution_to_baseline`, …). Writes need your confirmation in the UI. |
+| **Solid JMeter plumbing** | Streaming JTL parser with exact percentiles and flat memory use, queued runs when the load generator is busy, live progress over WebSocket, SelfHeal for broken extractors. |
+| **Private by default** | No accounts and no login; the server refuses to bind to anything but loopback, and Host/Origin checks block other sites in your browser. |
 
-### 环境要求
+## Screenshots
 
-- **操作系统**: Windows 或 Linux（暂不支持 macOS：多进程协调层只在这两个平台上校验本地文件系统和进程身份）
-- **Python**: 3.11+
-- **Node.js**: 20+
-- **Java**: 11+（JMeter 运行依赖，使用 `java -version` 验证）
-- **Apache JMeter**: 5.6.3（仓库**不内置**，按下述步骤安装；仅运行单元测试时不需要）
+<table>
+  <tr>
+    <td width="50%"><img src=".github/assets/project-overview.png" alt="Project overview with loop setup steps and recent runs"><br><sub><b>Project overview</b> — what is set up, and the latest verdicts</sub></td>
+    <td width="50%"><img src=".github/assets/requirements.png" alt="Requirements editor with verified source quotes"><br><sub><b>Requirements</b> — AI draft, source quotes, load profile</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src=".github/assets/report-trends.png" alt="Report trends: response time, throughput and error rate over time"><br><sub><b>Trends</b> — response time, throughput, errors, percentiles</sub></td>
+    <td width="50%"><img src=".github/assets/runs.png" alt="All runs with verdict, key metrics and AI status"><br><sub><b>Runs</b> — every run, its verdict and key numbers at a glance</sub></td>
+  </tr>
+</table>
 
-### 准备 JMeter 运行时
+<sub>Screenshots come from a sample run against the public JSONPlaceholder API, with four example requirements.</sub>
 
-从 [Apache JMeter 下载页](https://jmeter.apache.org/download_jmeter.cgi) 下载 `apache-jmeter-5.6.3` 压缩包，任选一种方式让后端能定位到它：
+## Quick start
 
-**方式 A：解压到项目根目录（零配置，推荐）**
-
-将压缩包内的 `bin/` 和 `lib/` 解压到本项目根目录（与 `jmeter-agent-backend/` 同级），最终结构为：
-
-```
-jmeter-agent/
-├── bin/jmeter.bat          # Windows；Linux 为 bin/jmeter
-├── lib/
-└── jmeter-agent-backend/
-```
-
-**方式 B：设置 `JMETER_HOME` 环境变量**
-
-指向 JMeter 的 `bin` 目录（指向 JMeter 安装根目录也可识别）：
+**Requirements:** Python 3.11+, Node.js 20+, Java 11+ and [Apache JMeter 5.6.3](https://jmeter.apache.org/download_jmeter.cgi). Tested on Windows and Linux; macOS should work but is untested.
 
 ```bash
-# Windows（永久生效）
-setx JMETER_HOME "C:\apache-jmeter-5.6.3\bin"
-
-# Linux（写入 ~/.bashrc 或 ~/.zshrc）
-export JMETER_HOME=/opt/apache-jmeter-5.6.3/bin
+git clone https://github.com/xiaoyuCR7/jmeter-ai-agent.git
+cd jmeter-ai-agent
 ```
 
-**方式 C：加入系统 `PATH`**
+**1. Make JMeter discoverable** — pick one:
 
-将 `apache-jmeter-5.6.3/bin` 加入 `PATH`，执行器会自动发现 `jmeter` / `jmeter.bat`。
+- extract the archive's `bin/` and `lib/` into the project root (zero configuration), or
+- set `JMETER_HOME` to JMeter's `bin` directory (or its install root), or
+- put JMeter's `bin` on your `PATH`.
 
-> 安装后可用 `jmeter --version` 验证。仅查看/编辑测试计划、运行前后端单元测试不需要 JMeter；执行真实压测和生成 HTML 报告时必须安装。
+JMeter is only needed to execute load tests; editing plans and running the unit tests work without it.
 
-### 快速开始
-
-#### 方式一：一键启动脚本（推荐）
-
-> 前置条件：已完成上述 [JMeter 运行时准备](#准备-jmeter-运行时)，且 Java 11+ 可用。
+**2. Start everything**
 
 ```bash
-# Windows
-start.bat
-
-# Linux
-./start.sh
+./start.sh        # Linux / macOS
+start.bat         # Windows
 ```
 
-脚本会自动检测端口占用，并分别启动后端（8000）与前端（3000）服务。
-
-#### 方式二：手动安装
-
-**1. 准备 JMeter 运行时**
-
-按上文 [准备 JMeter 运行时](#准备-jmeter-运行时) 完成安装。
-
-**2. 安装后端依赖**
+Or by hand:
 
 ```bash
-cd jmeter-agent-backend
-pip install -r requirements.txt
+cd jmeter-agent-backend && pip install -r requirements.txt && python -m app.main   # http://127.0.0.1:8000
+cd jmeter-agent-frontend && npm install && npm run dev                             # http://localhost:3000
 ```
 
-**3. 安装前端依赖**
+**3. Add a model** in **Settings → AI models** (or put an API key in `jmeter-agent-backend/.env`, see [`.env.example`](jmeter-agent-backend/.env.example)), then click **Start from a document**.
+
+API docs are served at http://127.0.0.1:8000/api/docs.
+
+## Use it from Claude Code, Cursor and friends
 
 ```bash
-cd jmeter-agent-frontend
-npm install
+claude mcp add --transport http jmeter-agent http://127.0.0.1:8000/api/v1/mcp
 ```
 
-**4. 配置环境变量**
+Ready-to-copy configs for Cursor, VS Code and others are under **Settings → Assistants (MCP)**. Ask the assistant to use the
+`analyze-execution` prompt, or to call `get_execution_evidence` first — it gets exactly what the report page shows.
+Older SSE-only clients can use `/api/v1/mcp/sse`.
+
+## Configuration
+
+Common settings in `jmeter-agent-backend/.env`:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `PORT` | Backend port | `8000` |
+| `JMETER_HOME` | JMeter `bin` directory or install root | `<project>/bin` |
+| `JMETER_TIMEOUT` | Max run time in seconds | `3600` |
+| `JMETER_HEAP_MIN` / `JMETER_HEAP_MAX` | JMeter JVM heap | `256m` / `2g` |
+| `RESOURCE_CPU_THRESHOLD` / `RESOURCE_MEMORY_THRESHOLD` | Queue new runs above this load-generator usage (%) | `80` / `85` |
+| `DEEPSEEK_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `QWEN_API_KEY` | Model keys (models can also be added in the UI) | – |
+
+`HOST` must stay a loopback address: there is no login, so the server refuses to start on anything else.
+
+<details>
+<summary><b>Key API endpoints</b></summary>
+
+| Method | Path | Description |
+|---|---|---|
+| GET / PUT | `/api/v1/projects/{id}/requirements` | Read / save performance requirements |
+| POST | `/api/v1/projects/{id}/requirements/extract` | AI requirements draft from document text |
+| GET / PUT | `/api/v1/projects/{id}/monitoring` | Prometheus configuration |
+| POST | `/api/v1/test-plans/{id}/execute` | Run a test plan |
+| GET | `/api/v1/executions` | Runs with verdicts and key metrics |
+| GET | `/api/v1/executions/{id}/report` | Full report |
+| GET | `/api/v1/executions/{id}/evidence` | Verdicts, history comparison, server metrics |
+| POST | `/api/v1/executions/{id}/promote-baseline` | Set a run as the baseline |
+| POST | `/api/v1/mcp` | MCP Streamable HTTP endpoint |
+
+</details>
+
+<details>
+<summary><b>Project layout</b></summary>
+
+```
+jmeter-ai-agent/
+├── jmeter-agent-backend/     FastAPI service
+│   └── app/
+│       ├── api/              REST + MCP routes
+│       ├── services/
+│       │   ├── requirements.py, evidence.py, baseline_compare.py, server_metrics.py
+│       │   ├── ai/           model adapters, agents, RAG
+│       │   └── jmeter/       executor, JMX builder/parser, streaming JTL parser
+│       └── middleware/       loopback Host / Origin guard
+├── jmeter-agent-frontend/    Vue 3 + TypeScript + Element Plus
+└── start.sh / start.bat
+```
+
+`bin/`, `lib/` (the JMeter runtime), test plans, reports and local databases are git-ignored.
+
+</details>
+
+<details>
+<summary><b>Troubleshooting</b></summary>
+
+- **`JMeter executable not found`** — check `java -version`, then one of: `bin/jmeter(.bat)` in the project root, `JMETER_HOME`, or JMeter on `PATH` (`jmeter --version`).
+- **AI analysis fails** — test the model in **Settings → AI models**; check the key and network access.
+- **Port in use** — `PORT=8001 ./start.sh` (Windows: `set PORT=8001` then `start.bat`).
+- **Runs stay queued** — the load generator is above `RESOURCE_*_THRESHOLD`; the top bar shows its CPU / memory.
+- **Logs** — `jmeter-agent-backend/server_stdout.log`, `server_stderr.log`, and `reports/{execution_id}/jmeter.log` per run.
+
+</details>
+
+## Development
 
 ```bash
-cd jmeter-agent-backend
-cp .env.example .env
+cd jmeter-agent-backend && pip install -r requirements-dev.txt && pytest tests
+cd jmeter-agent-frontend && npm install && npm run test:run && npx vue-tsc --noEmit
 ```
 
-编辑 `.env`，至少配置一个 AI 模型的 API Key：
+Issues and pull requests are welcome. Please keep PRs focused and include tests for behaviour changes.
 
-```env
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-DEEPSEEK_API_BASE=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
+## License
 
-# 可选：其他模型
-OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
-QWEN_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-**5. 启动服务**
-
-```bash
-# 后端（端口 8000）
-cd jmeter-agent-backend
-python -m app.main
-
-# 前端（端口 3000）
-cd jmeter-agent-frontend
-npm run dev
-```
-
-### 访问地址
-
-- **前端界面**：http://localhost:3000
-- **后端 API**：http://localhost:8000
-- **API 文档（Swagger）**：http://localhost:8000/api/docs
-
----
-
-## 使用说明
-
-### 免登录访问
-
-本项目面向本地私人部署，没有登录与账号体系，打开页面即可使用。服务只允许监听 `127.0.0.1` 等回环地址，不要通过端口转发暴露到公网。
-
-### 界面结构
-
-左侧导航只有三项：**项目**、**执行记录**、**设置**，上方的「从文档开始」是新建项目的入口。
-
-- **项目**：每个项目一个工作区，标签页依次是概览（闭环配置进度与最近执行）、性能需求、测试计划、基线、设置（基本信息、环境、服务端监控）。
-- **执行记录**：所有项目的执行放在一张表里，可按项目和状态筛选，每行直接显示需求判定、关键指标和 AI 分析状态。
-- **设置**：AI 模型、外部助手接入（MCP）、系统路径、外观与语言。
-
-### 从文档开始
-
-1. 点击左上角「从文档开始」
-2. 上传或粘贴接口 / 需求文档，并写下测试目标（例如“下单接口 500 并发持续 10 分钟，P95 不超过 1 秒”）；也可以只填 OpenAPI 地址（示例文件：`reqres-openapi.yaml`）
-3. AI 生成项目和测试计划后，点「核对性能需求」，你写的文本会预填到需求提取框，确认 AI 草稿后保存
-
-### 创建与编辑测试计划
-
-1. 在项目的「测试计划」标签点「新建测试计划」，选择模板（基准、高并发、阶梯加压等）
-2. 并发和时长会按性能需求里的负载模型预填
-3. 编辑器有「表单视图」和「JMX 树视图」两种，顶部切换；切换时当前视图有改动才会保存
-
-### 执行测试
-
-1. 在测试计划列表点「运行」
-2. 「执行记录」页实时显示进度，可查看日志或取消
-3. 系统会在资源占用超阈值时自动排队，顶栏显示压测机 CPU / 内存
-
-### 查看报告
-
-报告顶部是需求判定横幅和核心指标，下面按标签页展开：
-
-- 判定与证据：逐条需求达标情况、与基线和上一次执行的对比（可一键设为基线）、Prometheus 服务端指标
-- 趋势：响应时间、吞吐量、错误率曲线与分位数
-- 接口明细、错误
-- AI 分析（可下载 Markdown）；顶部还可下载 JTL 和打开 JMeter 原生 HTML 报告
-
-### MCP 集成
-
-推荐使用 Streamable HTTP 端点 `http://127.0.0.1:8000/api/v1/mcp`，例如 Claude Code：`claude mcp add --transport http jmeter-agent http://127.0.0.1:8000/api/v1/mcp`；其它客户端的配置可在「设置 → 外部助手接入（MCP）」中一键复制。分析时让助手使用 `analyze-execution` 提示词或先调用 `get_execution_evidence`，它拿到的需求判定、基线对比和服务端指标与报告页一致。
-
----
-
-## 配置详情
-
-### 环境变量
-
-常用配置如下（服务无登录，只能绑定本机回环地址，`HOST` 设为其它地址会拒绝启动）：
-
-| 变量名 | 说明 | 默认值 |
-|--------|------|--------|
-| `HOST` / `PORT` | 后端监听地址与端口 | `127.0.0.1` / `8000` |
-| `DEBUG` | 调试模式 | `true` |
-| `DATABASE_URL` | 数据库连接 | `sqlite+aiosqlite:///./jmeter_agent.db` |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `QWEN_API_KEY` / `DEEPSEEK_API_KEY` | 各模型 API Key（至少配置一个），配套 `*_API_BASE`、`*_MODEL` 可选 | - |
-| `DEFAULT_AI_MODEL` | 默认 AI 模型 | `openai` |
-| `JMETER_HOME` | JMeter 可执行文件目录（`bin` 或安装根目录均可） | `<项目根>/bin` |
-| `JMETER_TIMEOUT` | 单次测试超时（秒） | `3600` |
-| `RESOURCE_CPU_THRESHOLD` / `RESOURCE_MEMORY_THRESHOLD` | 触发排队的 CPU / 内存阈值（%） | `80` / `85` |
-| `RESOURCE_MAX_CONCURRENT_TESTS` | 最大并发测试数 | `2` |
-
-> Agent 并发与超时、对话记忆开关等完整配置见 [.env.example](jmeter-agent-backend/.env.example)。AI 模型也可以在系统"设置"页面通过界面管理（存储于运行时生成的 `ai_models_config.json`）。
-
-### JMeter JVM 配置
-
-```env
-JMETER_HEAP_MIN=256m
-JMETER_HEAP_MAX=2g
-JMETER_GC_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=100
-```
-
-### 路径配置
-
-系统运行时自动创建以下目录（可在系统设置中修改存储路径）：
-
-- `jmeter-agent-backend/test_plans/` —— 测试计划存储
-- `jmeter-agent-backend/reports/` —— 测试报告存储
-- `backups/` —— 备份文件
-
----
-
-## API 接口
-
-所有接口统一前缀 `/api/v1`，无需认证（仅限本机访问）。
-
-| 模块 | 代表端点 | 能力 |
-|------|----------|------|
-| 测试计划 | `/test-plans`、`/test-plans/generate`、`/test-plans/{id}/jmx/*` | AI 生成、JMX 组件树编辑、原文查看与下载 |
-| 测试执行 | `/test-plans/{id}/execute`、`/executions/{id}`（`cancel`、`report`、`html-report`、`dashboard-data`、`log`） | 异步执行、取消、实时进度、报告与日志 |
-| 项目与环境 | `/projects`、`/projects/{id}/environments` | 多项目、多环境与激活环境切换 |
-| AI 与 Agent | `/ai/models`、`/ai/workflow/stream`、`/agent/run`、`/openapi/import` | 模型配置与连通性测试、Agent、OpenAPI 导入 |
-| 需求 / 证据 / 监控 | `/projects/{id}/requirements`、`/projects/{id}/monitoring`、`/executions/{id}/evidence`、`/executions/{id}/promote-baseline` | 需求提取与保存、Prometheus 配置、执行证据、设为基线 |
-| 分析 / RAG / 基线 | `/analysis/reports`、`/rag/*`、`/baselines`、`/data/*` | 报告分析下载、知识库检索、基线管理、数据文件 |
-| 系统与 MCP | `/system/*`、`/jmeter/components`、`/jmeter/functions`、`/mcp/sse`、`/mcp/messages` | 系统状态与资源、JMeter 注册表、MCP 接入 |
-
-完整的请求 / 响应 schema 与在线调试见交互式文档：http://localhost:8000/api/docs
-
----
-
-## CI/CD 集成
-
-仓库的 `.github/workflows/quality.yml` 会在 Windows、Linux 上执行后端可移植测试，并在 Linux 的安全 SQLite 绑定上执行完整协调测试；同时校验 Python 依赖锁、前端依赖审计、测试与生产构建。
-
-仓库还提供 `gitlab-ci-example.yml` 示例，展示如何在 GitLab CI 流水线中：
-
-1. 启动 JMeter Agent 后端
-2. 调用 API 执行指定测试计划
-3. 等待执行完成并拉取报告
-4. 基于 SLA / 错误率判定流水线成败
-
-复制该文件为 `.gitlab-ci.yml` 并按需修改环境变量即可接入。
-
----
-
-## 开发指南
-
-### 环境设置
-
-```bash
-git clone <repo-url>
-cd jmeter-agent
-
-# 后端（开发与测试工具也使用精确锁）
-cd jmeter-agent-backend && pip install -r requirements-dev.txt
-
-# 前端
-cd ../jmeter-agent-frontend && npm install
-```
-
-### 代码规范
-
-- **Python**：遵循 PEP 8，建议使用 `black` 格式化
-- **TypeScript / Vue**：遵循 ESLint 规范
-- **提交信息**：使用语义化提交格式（如 `feat:` / `fix:` / `docs:`）
-
-### 运行测试
-
-```bash
-# 后端测试
-cd jmeter-agent-backend
-pytest tests
-
-# 前端测试
-cd jmeter-agent-frontend
-npm run test:run        # 单次运行
-npm run test:coverage   # 覆盖率
-```
-
-### 前端构建
-
-```bash
-cd jmeter-agent-frontend
-npm run build     # vue-tsc 类型检查 + 产物构建
-npm run preview   # 本地预览构建产物
-```
-
-运行时直接依赖维护在 `requirements.in`，开发依赖维护在 `requirements-dev.in`；提交前应使用锁文件头部记录的命令重新生成对应的 `.txt` 文件。
-
-### 提交 PR
-
-1. Fork 项目并创建功能分支：`git checkout -b feature/your-feature`
-2. 确保所有测试通过
-3. 更新相关文档
-4. 创建 Pull Request 并描述变更内容
-
----
-
-## 故障排除
-
-### 1. JMeter 未找到
-
-**现象**：启动时提示 `JMeter executable not found`
-
-**解决**：
-- 确保已安装 Java 11+（`java -version` 验证）
-- 确认已安装 Apache JMeter 5.6.3（见[准备 JMeter 运行时](#准备-jmeter-运行时)），后端按以下顺序定位，满足任一即可：
-  - 项目根目录下存在 `bin/jmeter.bat`（Windows）或 `bin/jmeter`（Linux）
-  - 环境变量 `JMETER_HOME` 指向 JMeter 的 `bin` 目录（指向其安装根目录也可）
-  - JMeter 的 `bin` 目录已加入系统 `PATH`（可先用 `jmeter --version` 验证）
-
-### 2. AI 模型连接失败
-
-**现象**：报告分析失败或 AI 对话无响应
-
-**解决**：
-- 检查 `.env` 中 API Key 是否正确
-- 确认网络可访问对应模型服务
-- 在"设置"页面使用模型连通性测试功能排查
-
-### 3. 端口被占用
-
-**现象**：启动失败，提示端口已被占用
-
-**解决**：使用 `PORT` 环境变量指定其他端口
-
-```bash
-# Windows
-set PORT=8001
-start.bat
-
-# Linux
-PORT=8001 ./start.sh
-```
-
-### 4. 测试执行超时或排队
-
-**现象**：测试长时间不开始或无响应
-
-**解决**：
-- 增大 `JMETER_TIMEOUT`（秒）
-- 检查系统资源是否超过 `RESOURCE_CPU_THRESHOLD` / `RESOURCE_MEMORY_THRESHOLD`（测试会自动排队等待资源释放，最长等待 `RESOURCE_MAX_WAIT_SECONDS`）
-- 适当调大 `RESOURCE_MAX_CONCURRENT_TESTS`
-- 检查目标服务是否正常运行
-
-### 5. 前端无法连接后端
-
-**现象**：前端页面显示连接错误
-
-**解决**：
-- 确认后端服务已启动
-- 检查 `jmeter-agent-frontend/vite.config.ts` 中的代理配置
-- 确认防火墙未阻止端口访问
-
-### 日志查看
-
-```bash
-# 后端日志
-tail -f jmeter-agent-backend/server_stdout.log
-tail -f jmeter-agent-backend/server_stderr.log
-
-# 单次测试的 JMeter 日志
-jmeter-agent-backend/reports/{execution_id}/jmeter.log
-```
-
----
-
-## 许可证
-
-[Apache License 2.0](LICENSE)
-
----
-
-## 联系方式
-
-如有问题或建议，欢迎提交 Issue。
+[Apache License 2.0](LICENSE). Apache JMeter is a trademark of the Apache Software Foundation; this project is not affiliated with or endorsed by it.
