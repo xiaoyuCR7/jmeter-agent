@@ -1,12 +1,6 @@
 <template>
-  <el-card class="evidence-panel">
-    <template #header>
-      <div class="panel-header">
-        <span>{{ L('判定与证据', 'Verdict & evidence') }}</span>
-        <el-tag v-if="req && req.verdict !== 'none'" :type="verdictType" size="large" effect="dark">{{ verdictText }}</el-tag>
-      </div>
-    </template>
-
+  <div class="evidence-panel">
+    <section class="panel">
     <div class="section-header"><h4>{{ L('性能需求达标', 'Requirements') }}</h4></div>
     <template v-if="req && req.verdict !== 'none'">
       <p class="tally">
@@ -48,12 +42,14 @@
         <li v-for="(v, i) in slaResult.violations" :key="i" class="bad">{{ v }}</li>
         <li v-if="!slaResult.violations?.length" class="ok">{{ L('默认阈值全部通过', 'All default thresholds passed') }}</li>
       </ul>
-      <el-button type="primary" text @click="$router.push({ name: 'ProjectSettings', params: { projectId }, query: { tab: 'requirements' } })">
+      <el-button type="primary" text @click="$router.push(`/projects/${projectId}/requirements`)">
         {{ L('从测试文档录入需求 →', 'Add requirements from a test document →') }}
       </el-button>
     </div>
 
-    <section class="history">
+    </section>
+
+    <section class="panel">
       <div class="section-header">
         <h4>{{ L('历史对比', 'History') }}</h4>
         <el-tag v-if="history?.is_baseline" type="success" size="small">{{ L('本次即当前基线', 'This run is the baseline') }}</el-tag>
@@ -86,7 +82,7 @@
       </div>
     </section>
 
-    <section class="server">
+    <section class="panel">
       <div class="section-header">
         <h4>{{ L('服务端指标', 'Server metrics') }}</h4>
         <el-button v-if="server && server.status !== 'not_configured'" text size="small" :loading="refreshing" @click="refresh">
@@ -95,7 +91,7 @@
       </div>
       <div v-if="!server || server.status === 'not_configured'" class="empty">
         <p>{{ L('未配置 Prometheus，AI 只能根据客户端数据推测根因。', 'Prometheus is not configured, so AI can only guess root causes from client-side data.') }}</p>
-        <el-button type="primary" text @click="$router.push({ name: 'ProjectSettings', params: { projectId }, query: { tab: 'monitoring' } })">
+        <el-button type="primary" text @click="$router.push(`/projects/${projectId}/settings?section=monitoring`)">
           {{ L('配置服务端监控 →', 'Configure server monitoring →') }}
         </el-button>
       </div>
@@ -138,7 +134,7 @@
         </div>
       </template>
     </section>
-  </el-card>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -165,10 +161,6 @@ const { currentLang } = useI18n()
 const L = (zh: string, en: string) => currentLang.value === 'en' ? en : zh
 
 const req = computed(() => props.evidence?.requirements ?? null)
-const verdictType = computed(() => ({ pass: 'success', fail: 'danger', incomplete: 'warning' } as const)[req.value!.verdict as 'pass' | 'fail' | 'incomplete'])
-const verdictText = computed(() => ({
-  pass: L('全部达标', 'All met'), fail: L('未达标', 'Not met'), incomplete: L('部分无法评估', 'Incomplete'),
-} as Record<string, string>)[req.value!.verdict])
 
 const statusType = (s: string) => ({ pass: 'success', fail: 'danger', missing: 'info' } as Record<string, any>)[s]
 const statusText = (s: string) => ({ pass: L('达标', 'Pass'), fail: L('不达标', 'Fail'), missing: L('无数据', 'No data') } as Record<string, string>)[s]
@@ -242,29 +234,29 @@ const chartOption = computed(() => {
 </script>
 
 <style scoped lang="scss">
-.panel-header { display: flex; justify-content: space-between; align-items: center; font-weight: 500; }
-.tally { margin: 0 0 12px; color: var(--tavily-text-secondary); }
-.ok { color: var(--el-color-success); }
-.bad { color: var(--el-color-danger); }
-.muted { color: var(--tavily-text-muted); }
-.sub { font-size: 12px; color: var(--tavily-text-muted); margin-top: 2px; }
-.gap { margin-left: 6px; font-size: 12px; color: var(--el-color-danger); font-variant-numeric: tabular-nums; }
-.quote { font-size: 12px; color: var(--tavily-text-secondary); }
-.quote.unverified { color: var(--el-color-warning); }
-.empty p { margin: 0 0 8px; color: var(--tavily-text-secondary); }
+.evidence-panel { display: flex; flex-direction: column; gap: 16px; }
+.tally { margin: 0 0 12px; color: var(--app-text-secondary); font-variant-numeric: tabular-nums; }
+.ok { color: var(--app-success); }
+.bad { color: var(--app-danger); }
+.muted { color: var(--app-text-muted); }
+.sub { font-size: 12px; color: var(--app-text-muted); margin-top: 2px; }
+.gap { margin-left: 6px; font-size: 12px; color: var(--app-danger); font-variant-numeric: tabular-nums; }
+.quote { font-size: 12px; color: var(--app-text-secondary); }
+.quote.unverified { color: var(--app-warning); }
+.empty p { margin: 0 0 8px; color: var(--app-text-secondary); }
 .sla { margin: 0 0 8px; padding-left: 18px; font-size: 13px; }
-.history { margin-top: 24px; border-top: 1px solid var(--tavily-border); padding-top: 16px; }
 .comparison { margin-bottom: 14px; }
-.comparison-title { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
-.deltas { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.comparison-title { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; color: var(--app-text); }
+.deltas { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--app-text-secondary); }
+.delta.bad { color: var(--app-danger); }
+.delta.ok { color: var(--app-success); }
 .delta small { color: inherit; opacity: .8; }
 .tx-table { margin-top: 8px; }
-.server { margin-top: 24px; border-top: 1px solid var(--tavily-border); padding-top: 16px; }
-.section-header { display: flex; justify-content: space-between; align-items: center; }
-.section-header h4 { margin: 0 0 10px; font-size: 15px; }
-.findings { margin: 0 0 12px; padding-left: 18px; color: var(--el-color-danger); font-size: 13px; }
+.section-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.section-header h4 { margin: 0; font-size: 15px; font-weight: 600; color: var(--app-text); }
+.findings { margin: 0 0 12px; padding-left: 18px; color: var(--app-danger); font-size: 13px; }
 .chart-block { margin-top: 12px; }
 .chart-select { width: 320px; max-width: 100%; }
 .chart { height: 280px; margin-top: 8px; }
-:deep(.row-fail) td { background: color-mix(in srgb, var(--el-color-danger) 6%, transparent); }
+:deep(.row-fail) td { background: var(--app-danger-soft) !important; }
 </style>

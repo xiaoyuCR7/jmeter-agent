@@ -1,13 +1,6 @@
 <template>
   <div class="project-settings">
-    <div class="page-header">
-      <el-button @click="goBack" text>
-        <el-icon><ArrowLeft /></el-icon> {{ t('projectSettings.back') }}
-      </el-button>
-      <h3>{{ t('projectSettings.title') }}</h3>
-    </div>
-
-    <el-tabs v-model="activeSettingsTab" class="settings-tabs">
+    <el-tabs v-model="activeSettingsTab" tab-position="left" class="settings-tabs">
       <!-- Basic Info Tab -->
       <el-tab-pane :label="t('projectSettings.tab.basic')" name="info">
         <el-card shadow="never" class="info-card">
@@ -24,6 +17,15 @@
               </el-button>
             </el-form-item>
           </el-form>
+        </el-card>
+        <el-card shadow="never" class="info-card danger-zone">
+          <div class="danger-row">
+            <div>
+              <div class="danger-title">{{ localText('删除项目', 'Delete project') }}</div>
+              <div class="danger-hint">{{ localText('同时删除项目下的测试计划、需求、基线和监控配置，无法恢复。', 'Also deletes its test plans, requirements, baselines and monitoring settings. This cannot be undone.') }}</div>
+            </div>
+            <el-button type="danger" plain @click="deleteProject">{{ localText('删除项目', 'Delete project') }}</el-button>
+          </div>
         </el-card>
       </el-tab-pane>
 
@@ -145,10 +147,6 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane :label="localText('性能需求', 'Performance requirements')" name="requirements" lazy>
-        <RequirementsPanel :project-id="projectId" />
-      </el-tab-pane>
-
       <el-tab-pane :label="localText('服务端监控', 'Server monitoring')" name="monitoring" lazy>
         <MonitoringPanel :project-id="projectId" />
       </el-tab-pane>
@@ -182,13 +180,12 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Plus, Edit, CopyDocument, Delete, CircleCheckFilled
+  Plus, Edit, CopyDocument, Delete, CircleCheckFilled
 } from '@element-plus/icons-vue'
 import { api } from '@/api'
-import RequirementsPanel from '@/components/RequirementsPanel.vue'
 import MonitoringPanel from '@/components/MonitoringPanel.vue'
 import { useI18n } from '@/composables/useI18n'
 
@@ -207,11 +204,16 @@ interface EnvData {
   headerRows?: KVRow[]
 }
 
+const props = defineProps<{ projectId: string }>()
+const emit = defineEmits<{ updated: []; deleted: [] }>()
 const route = useRoute()
-const router = useRouter()
-const projectId = computed(() => route.params.projectId as string)
+const projectId = computed(() => props.projectId)
 
-const activeSettingsTab = ref(['requirements', 'monitoring'].includes(route.query.tab as string) ? route.query.tab as string : 'info')
+const SECTIONS = ['info', 'environments', 'monitoring']
+const activeSettingsTab = ref(SECTIONS.includes(route.query.section as string) ? route.query.section as string : 'info')
+watch(() => route.query.section, section => {
+  if (SECTIONS.includes(section as string)) activeSettingsTab.value = section as string
+})
 const savingInfo = ref(false)
 const savingEnv = ref(false)
 // Project form
@@ -336,10 +338,29 @@ async function saveProjectInfo() {
       description: projectForm.description || null,
     })
     ElMessage.success(t('projectSettings.message.saveSuccess'))
+    emit('updated')
   } catch (e: any) {
     ElMessage.error(t('projectSettings.message.saveFailed') + ': ' + (e.response?.data?.detail || e.message))
   } finally {
     savingInfo.value = false
+  }
+}
+
+async function deleteProject() {
+  const id = projectId.value
+  try {
+    await ElMessageBox.confirm(
+      t('testPlans.confirmDeleteProject', { name: projectForm.name }),
+      localText('删除项目', 'Delete project'),
+      { type: 'warning', confirmButtonText: t('projectSettings.delete'), cancelButtonText: t('projectSettings.cancel') }
+    )
+  } catch { return }
+  try {
+    await api.deleteProject(id)
+    ElMessage.success(t('testPlans.message.projectDeleted'))
+    emit('deleted')
+  } catch (e: any) {
+    ElMessage.error(e.response?.data?.detail || t('projectSettings.message.deleteFailed'))
   }
 }
 
@@ -457,119 +478,53 @@ async function deleteEnv(env: EnvData) {
     }
   }
 }
-
-function goBack() {
-  router.push(`/test-plans?projectId=${projectId.value}`)
-}
 </script>
 
 <style scoped lang="scss">
 .project-settings {
-  max-width: 960px;
-  margin: 0 auto;
-  box-sizing: border-box;
-
-
+  .settings-tabs :deep(.el-tabs__content) { padding-left: 8px; }
   @media (max-width: 768px) {
-    padding: 0 16px;
+    .settings-tabs { flex-direction: column; }
   }
 
-  .page-header {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-bottom: 20px;
-
-    h3 {
-      margin: 0;
-      font-size: 20px;
-      font-weight: 500;
-      color: var(--tavily-text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      min-width: 0;
-    }
-  }
-
-  .settings-tabs {
-    :deep(.el-tabs__header) {
-      margin-bottom: 20px;
-    }
-  }
-
-  .info-card {
-    border: 1px solid var(--tavily-border);
-    border-radius: var(--tavily-radius-xl);
-  }
+  .info-card { margin-bottom: 16px; }
+  .danger-zone { border-color: var(--app-danger-soft); }
+  .danger-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .danger-title { font-weight: 500; color: var(--app-text); }
+  .danger-hint { font-size: 12px; color: var(--app-text-muted); }
 
   .env-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 16px;
-
-    .env-count {
-      font-size: 14px;
-      color: var(--tavily-text-secondary);
-    }
+    margin-bottom: 12px;
+    .env-count { color: var(--app-text-secondary); }
   }
 
-  .env-empty {
-    padding: 40px 0;
-  }
-
-  .env-cards {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
+  .env-empty { padding: 40px 0; }
+  .env-cards { display: flex; flex-direction: column; gap: 16px; }
 
   .env-card {
-    border: 1px solid var(--tavily-border);
-    border-radius: var(--tavily-radius-xl);
-
-    &.active {
-      border-color: var(--tavily-primary);
-      box-shadow: 0 0 0 1px var(--tavily-primary);
-    }
-
+    &.active { border-color: var(--app-primary); }
     .env-card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
       flex-wrap: wrap;
       gap: 12px;
-
-      .env-card-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 15px;
-        font-weight: 500;
-        color: var(--tavily-text-primary);
-        min-width: 0;
-
-        span {
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-          min-width: 0;
-        }
-      }
-
-      .env-card-actions {
-        display: flex;
-        gap: 8px;
-
-        .el-button { width: auto; }
-      }
     }
+    .env-card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+      color: var(--app-text);
+      min-width: 0;
+      span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    }
+    .env-card-actions { display: flex; gap: 4px; }
   }
 
-  .env-table-wrapper {
-    overflow-x: auto;
-  }
+  .env-table-wrapper { overflow-x: auto; }
 }
 </style>

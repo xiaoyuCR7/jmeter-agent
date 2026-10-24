@@ -45,7 +45,7 @@ describe('workflow SSE', () => {
       const read = vi.fn().mockImplementation(async () => bytes.length
         ? { done: false, value: bytes.shift() } : { done: true })
       const context = workflowContext({ ok: true, body: { getReader: () => ({ read }) } })
-      await setupFunctions('AIChat', ['startWorkflow'], context).startWorkflow()
+      await setupFunctions('StartFromDocument', ['startWorkflow'], context).startWorkflow()
       expect(context.workflowResult.value?.project_id).toBe('p1')
       expect(context.workflowRunning.value).toBe(false)
       expect(context.ElMessage.error).not.toHaveBeenCalled()
@@ -53,7 +53,7 @@ describe('workflow SSE', () => {
 
   it('reports incomplete EOF rather than staying running', async () => {
     const context = workflowContext({ ok: true, body: { getReader: () => ({ read: async () => ({ done: true }) }) } })
-    await setupFunctions('AIChat', ['startWorkflow'], context).startWorkflow()
+    await setupFunctions('StartFromDocument', ['startWorkflow'], context).startWorkflow()
     expect(context.workflowRunning.value).toBe(false)
     expect(context.workflowResult.value).toBe(null)
     expect(context.ElMessage.error).toHaveBeenCalledOnce()
@@ -62,7 +62,7 @@ describe('workflow SSE', () => {
   it('rejects an HTTP error before consuming its body', async () => {
     const getReader = vi.fn()
     const context = workflowContext({ ok: false, status: 401, body: { getReader } })
-    await setupFunctions('AIChat', ['startWorkflow'], context).startWorkflow()
+    await setupFunctions('StartFromDocument', ['startWorkflow'], context).startWorkflow()
     expect(getReader).not.toHaveBeenCalled()
     expect(context.ElMessage.error).toHaveBeenCalledOnce()
   })
@@ -84,7 +84,7 @@ it('does not start resource polling after unmount while model lookup is pending'
   let mounted!: () => Promise<void>, unmounted = () => {}, resolve!: () => void
   const api = { getModels: () => new Promise<void>(r => { resolve = r }), checkResources: vi.fn() }
   const setInterval = vi.fn()
-  runInNewContext(js, { ref, computed: (fn: any) => fn, useRoute: () => ({}), useRouter: () => ({}),
+  runInNewContext(js, { ref, computed: (fn: any) => fn, Folder: {}, VideoPlay: {}, Setting: {}, useRoute: () => ({}), useRouter: () => ({}),
     useI18n: () => ({ t: (s: string) => s }), api, setInterval, clearInterval: vi.fn(),
     onMounted: (fn: any) => { mounted = fn }, onUnmounted: (fn: any) => { unmounted = fn } })
   const pending = mounted()

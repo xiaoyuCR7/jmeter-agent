@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useI18n } from '@/composables/useI18n'
 
@@ -22,23 +24,21 @@ describe('useI18n', () => {
 
   it('should return Chinese translation by default', () => {
     const { t } = useI18n()
-    expect(t('general.name')).toBe('名称')
-    expect(t('general.value')).toBe('值')
-    expect(t('general.description')).toBe('描述')
+    expect(t('layout.nav.projects')).toBe('项目')
+    expect(t('editor.view.form')).toBe('表单视图')
   })
 
   it('should return English translation when language is English', () => {
     mockAppStore.currentLang = 'en'
     const { t } = useI18n()
-    expect(t('general.name')).toBe('Name')
-    expect(t('general.value')).toBe('Value')
-    expect(t('general.description')).toBe('Description')
+    expect(t('layout.nav.projects')).toBe('Projects')
+    expect(t('editor.view.tree')).toBe('JMX tree')
   })
 
   it('should support interpolation', () => {
     const { t } = useI18n()
-    expect(t('general.saveFailed', { msg: '网络错误' })).toBe('保存失败: 网络错误')
-    expect(t('executions.executionCount', { count: 10 })).toBe('10 次执行')
+    expect(t('createPlan.apiCount', { count: 10 })).toBe('接口数量: 10')
+    expect(t('testPlans.confirmDeleteProject', { name: 'demo' })).toContain('"demo"')
   })
 
   it('should return fallback for missing keys', () => {
@@ -47,20 +47,12 @@ describe('useI18n', () => {
     expect(t('non.existent.key', null, 'fallback')).toBe('fallback')
   })
 
-  it('should have all baseline translations', () => {
+  it('has a title for every route', () => {
     const { t } = useI18n()
-    expect(t('baselines.title')).toBe('性能基线')
-    expect(t('baselines.subtitle')).toBe('管理性能基准和阈值，用于回归分析和漂移检测')
-    expect(t('baselines.create')).toBe('创建基线')
-    expect(t('baselines.thresholds')).toBe('阈值设置')
-    expect(t('baselines.p99Max')).toBe('P99最大响应时间')
-  })
-
-  it('should have report comparison translations', () => {
-    const { t } = useI18n()
-    expect(t('report.compare')).toBe('版本对比')
-    expect(t('report.current')).toBe('当前')
-    expect(t('report.selectCompare')).toBe('选择对比执行记录')
+    const router = readFileSync(resolve('src/router/index.ts'), 'utf8')
+    const keys = [...router.matchAll(/titleKey: '([\w.]+)'/g)].map(m => m[1])
+    expect(keys.length).toBeGreaterThan(0)
+    for (const key of keys) expect(t(key)).not.toBe(key)
   })
 
   it('should set language correctly', () => {

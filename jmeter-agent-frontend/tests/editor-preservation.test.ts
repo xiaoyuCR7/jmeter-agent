@@ -13,8 +13,8 @@ import HeadersEditor from '../src/components/editor/HeadersEditor.vue'
 vi.mock('@/composables/useI18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
 
 // Exercise the real setup functions, without importing unrelated UI components.
-function editor(view = 'TestCaseEditor') {
-  const file = readFileSync(resolve('src/views', `${view}.vue`), 'utf8')
+function editor(path = 'src/views/TestCaseEditor.vue') {
+  const file = readFileSync(resolve(path), 'utf8')
   const script = file.match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]
   const ast = ts.createSourceFile('setup.ts', script, ts.ScriptTarget.Latest, true)
   const declarations = ast.statements.filter(node => ts.isFunctionDeclaration(node) ||
@@ -358,7 +358,7 @@ describe('lossless test case editor', () => {
 
 describe('JMX editor save before run', () => {
   it.each([true, false])('executes only after successful persistence: %s', async saved => {
-    const e = editor('JmxEditor'); e.treeData.value = [plan()]
+    const e = editor('src/components/editor/JmxTreeEditor.vue'); e.treeData.value = [plan()]
     if (!saved) e.api.saveTestPlanTree.mockRejectedValue(new Error('save failed'))
     await e.handleRun()
     expect(e.api.executeTest).toHaveBeenCalledTimes(saved ? 1 : 0)

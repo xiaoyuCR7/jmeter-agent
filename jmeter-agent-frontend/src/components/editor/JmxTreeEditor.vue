@@ -1,13 +1,6 @@
 <template>
   <div class="editor-page">
     <div class="editor-toolbar">
-      <div class="toolbar-left">
-        <el-button @click="$router.back()">
-          <el-icon><ArrowLeft /></el-icon> {{ t('jmxEditor.back') }}
-        </el-button>
-        <el-divider direction="vertical" />
-        <span class="plan-name">{{ planName }}</span>
-      </div>
       <div class="toolbar-center">
         <el-button type="primary" @click="handleSave" :loading="saving">
           <el-icon><DocumentChecked /></el-icon> {{ t('jmxEditor.save') }}
@@ -171,9 +164,9 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, CopyDocument, Delete, Document, DocumentChecked, Plus, VideoPlay, SwitchButton } from '@element-plus/icons-vue'
+import { CopyDocument, Delete, Document, DocumentChecked, Plus, VideoPlay, SwitchButton } from '@element-plus/icons-vue'
 import { useI18n } from '@/composables/useI18n'
 import { api } from '@/api/index'
 import FunctionInput from '@/components/editor/FunctionInput.vue'
@@ -203,14 +196,13 @@ const LISTENER_LABELS: Record<string, string> = {
   BackendListenerGui: 'Backend Listener',
 }
 
-const route = useRoute()
+const props = defineProps<{ planId: string }>()
 const router = useRouter()
-const planId = route.params.id as string
+const planId = props.planId
 
 const treeData = ref<any[]>([])
 const selectedNode = ref<any>(null)
 const treeRef = ref<any>(null)
-const planName = ref(t('jmxEditor.defaultPlanName'))
 const saving = ref(false)
 const running = ref(false)
 
@@ -436,10 +428,8 @@ function applyRawProperties() {
 async function handleSave() {
   saving.value = true
   try {
-    await api.saveTestPlanTree(planId, {
-      tree: treeData.value[0],
-      name: planName.value,
-    })
+    await api.saveTestPlanTree(planId, { tree: treeData.value[0] })
+    savedSnapshot = JSON.stringify(treeData.value[0])
     ElMessage.success(t('jmxEditor.saveSuccess'))
     return true
   } catch (e: any) {
@@ -474,6 +464,12 @@ async function handleViewSource() {
   }
 }
 
+// Lets the parent editor skip a save (and its JMX rewrite) when nothing changed.
+let savedSnapshot = ''
+const isDirty = () => JSON.stringify(treeData.value[0]) !== savedSnapshot
+
+defineExpose({ handleSave, isDirty })
+
 function generateId() {
   return Math.random().toString(36).substring(2, 10)
 }
@@ -489,7 +485,7 @@ onMounted(async () => {
     const tree = parseRes.data
     if (tree) {
       treeData.value = [tree]
-      planName.value = tree.testname || t('jmxEditor.fallbackPlan')
+      savedSnapshot = JSON.stringify(tree)
     }
   } catch (e: any) {
     ElMessage.error(t('jmxEditor.loadError', { msg: e.response?.data?.detail || e.message }))

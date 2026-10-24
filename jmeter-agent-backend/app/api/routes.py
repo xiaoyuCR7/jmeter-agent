@@ -782,13 +782,51 @@ async def list_executions(
     offset: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
 ):
-    """列出所有执行记录，支持分页和项目过滤"""
-    if project_id:
-        execs = [e for e in store.executions.values() if e.project_id == project_id]
-    else:
-        execs = list(store.executions.values())
-    total = len(execs)
-    return {"executions": execs[offset:offset + limit], "total": total, "offset": offset, "limit": limit}
+    """列出执行记录（新的在前），每行附带计划名、需求判定与 AI 分析状态，供执行列表直接展示。"""
+    from app.services import requirements as requirements_service
+    execs = [e for e in store.executions.values() if not project_id or e.project_id == project_id]
+    execs.sort(key=lambda e: e.start_time or datetime.min, reverse=True)
+    page = execs[offset:offset + limit]
+    project_requirements = {}
+    for pid in {e.project_id for e in page}:
+        try:
+            project_requirements[pid] = await requirements_service.get_requirements(pid)
+        except Exception:
+            logger.warning("Failed to load requirements for project %s", pid, exc_info=True)
+            project_requirements[pid] = None
+    rows = []
+    for e in page:
+        plan = store.test_plans.get(e.test_plan_id)
+        project = store.projects.get(e.project_id)
+        summary = e.summary
+        verdict = None
+        if summary and summary.total_requests:
+            evaluation = requirements_service.evaluate(project_requirements.get(e.project_id), summary)
+            verdict = {"verdict": evaluation.verdict, "passed": evaluation.passed,
+                       "failed": evaluation.failed, "missing": evaluation.missing}
+        rows.append({
+            "id": e.id,
+            "project_id": e.project_id,
+            "project_name": project.name if project else "",
+            "test_plan_id": e.test_plan_id,
+            "test_plan_name": plan.name if plan else "",
+            "status": e.status.value if hasattr(e.status, 'value') else str(e.status),
+            "start_time": e.start_time.isoformat() if e.start_time else None,
+            "end_time": e.end_time.isoformat() if e.end_time else None,
+            "progress": e.progress,
+            "error_message": e.error_message,
+            "metrics": {
+                "total_requests": summary.total_requests,
+                "avg_response_time": summary.avg_response_time,
+                "p95_response_time": summary.p95_response_time,
+                "error_rate": summary.error_rate,
+                "throughput": summary.throughput,
+            } if summary else None,
+            "requirements": verdict,
+            "has_ai_analysis": bool(e.ai_analysis),
+            "has_markdown": bool(e.report_dir and os.path.isfile(os.path.join(e.report_dir, "ai_analysis.md"))),
+        })
+    return {"executions": rows, "total": len(execs), "offset": offset, "limit": limit}
 
 
 @router.get("/projects/{project_id}/executions", response_model=list)

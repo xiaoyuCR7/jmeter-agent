@@ -1,435 +1,150 @@
 <template>
   <div class="report-page" v-loading="loading">
     <template v-if="report">
-      <el-card class="report-header">
-        <div class="header-content">
-          <div>
-            <h2>{{ t('report.title') }} - {{ report.test_plan_name }}</h2>
-            <p class="meta">
-              {{ t('report.executionId', { id: report.execution_id }) }} | 
-              {{ t('report.startTime', { time: formatTime(report.start_time) }) }} | 
-              {{ t('report.duration', { duration: formatDuration(report.start_time, report.end_time) }) }}
-            </p>
-          </div>
-          <el-tag :type="report.status === 'completed' ? 'success' : 'danger'" size="large">
-            {{ report.status === 'completed' ? t('report.success') : t('report.failed') }}
-          </el-tag>
-        </div>
-      </el-card>
-
-      <EvidencePanel :evidence="report.evidence" :sla-result="report.sla_result" :project-id="reportProjectId"
-        :timeline="report.summary?.timeline_segments" @updated="report.evidence = $event" />
-
-      <el-card class="compare-card" v-if="comparisonEnabled">
-        <template #header>
-          <div class="card-header-flex">
-            <span>{{ t('report.compare') }}</span>
-            <el-switch v-model="comparisonEnabled" />
-          </div>
-        </template>
-        <div class="compare-controls">
-          <el-select
-            v-model="compareExecutionId"
-            :placeholder="t('report.selectCompare')"
-            class="compare-select"
-            @change="loadComparisonReport"
-          >
-            <el-option
-              v-for="exec in compareExecutions"
-              :key="exec.id"
-              :label="`${exec.test_plan_name} - ${formatTime(exec.start_time)}`"
-              :value="exec.id"
-            />
-          </el-select>
-          <el-button v-if="compareReport" text @click="compareReport = null">
-            {{ t('report.clearCompare') }}
-          </el-button>
-        </div>
-
-        <div v-if="compareReport" class="compare-content">
-          <el-row :gutter="16">
-            <el-col :xs="24" :sm="24" :md="12">
-              <div class="compare-section">
-                <h4>{{ t('report.current') }}</h4>
-                <div class="compare-metrics">
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.avgResponseTime') }}</span>
-                    <span class="value">{{ report.summary.avg_response_time }}ms</span>
-                  </div>
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.p99') }}</span>
-                    <span class="value">{{ report.summary.percentiles.p99 }}ms</span>
-                  </div>
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.errorRate') }}</span>
-                    <span class="value">{{ report.summary.error_rate }}%</span>
-                  </div>
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.throughput') }}</span>
-                    <span class="value">{{ report.summary.throughput }} req/s</span>
-                  </div>
-                </div>
-              </div>
-            </el-col>
-            <el-col :xs="24" :sm="24" :md="12">
-              <div class="compare-section">
-                <h4>{{ t('report.compare') }}</h4>
-                <div class="compare-metrics">
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.avgResponseTime') }}</span>
-                    <span class="value">{{ compareReport.summary.avg_response_time }}ms</span>
-                    <span class="change" :class="getChangeClass(report.summary.avg_response_time, compareReport.summary.avg_response_time)">
-                      {{ getChange(report.summary.avg_response_time, compareReport.summary.avg_response_time) }}
-                    </span>
-                  </div>
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.p99') }}</span>
-                    <span class="value">{{ compareReport.summary.percentiles.p99 }}ms</span>
-                    <span class="change" :class="getChangeClass(report.summary.percentiles.p99, compareReport.summary.percentiles.p99)">
-                      {{ getChange(report.summary.percentiles.p99, compareReport.summary.percentiles.p99) }}
-                    </span>
-                  </div>
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.errorRate') }}</span>
-                    <span class="value">{{ compareReport.summary.error_rate }}%</span>
-                    <span class="change" :class="getChangeClass(report.summary.error_rate, compareReport.summary.error_rate)">
-                      {{ getChange(report.summary.error_rate, compareReport.summary.error_rate) }}
-                    </span>
-                  </div>
-                  <div class="compare-metric">
-                    <span class="label">{{ t('report.throughput') }}</span>
-                    <span class="value">{{ compareReport.summary.throughput }} req/s</span>
-                    <span class="change" :class="getChangeClass(report.summary.throughput, compareReport.summary.throughput, true)">
-                      {{ getChange(report.summary.throughput, compareReport.summary.throughput) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </el-col>
-          </el-row>
-          <v-chart class="compare-chart" :option="compareChartOption" autoresize />
-        </div>
-      </el-card>
-
-
-      <!-- Summary Metrics -->
-      <el-row :gutter="12" class="metrics-row">
-        <el-col :xs="6" :sm="6" :md="8" :lg="4">
-          <el-card class="metric-card">
-            <div class="metric-value">{{ report.summary.total_requests }}</div>
-            <div class="metric-label">{{ t('report.totalRequests') }}</div>
-          </el-card>
-        </el-col>
-        <el-col :xs="6" :sm="6" :md="8" :lg="4">
-          <el-card class="metric-card">
-            <div class="metric-value" :class="getResponseTimeClass(report.summary.avg_response_time)">
-              {{ report.summary.avg_response_time }}ms
-            </div>
-            <div class="metric-label">{{ t('report.avgResponseTime') }}</div>
-          </el-card>
-        </el-col>
-        <el-col :xs="6" :sm="6" :md="8" :lg="4">
-          <el-card class="metric-card">
-            <div class="metric-value" :class="getErrorRateClass(report.summary.error_rate)">
-              {{ report.summary.error_rate }}%
-            </div>
-            <div class="metric-label">{{ t('report.errorRate') }}</div>
-          </el-card>
-        </el-col>
-        <el-col :xs="6" :sm="6" :md="8" :lg="4">
-          <el-card class="metric-card">
-            <div class="metric-value">{{ report.summary.throughput }}</div>
-            <div class="metric-label">{{ t('report.throughput') }}</div>
-          </el-card>
-        </el-col>
-        <el-col :xs="6" :sm="6" :md="8" :lg="4">
-          <el-card class="metric-card">
-            <div class="metric-value">{{ report.summary.min_response_time }}ms</div>
-            <div class="metric-label">{{ t('report.minResponseTime') }}</div>
-          </el-card>
-        </el-col>
-        <el-col :xs="6" :sm="6" :md="8" :lg="4">
-          <el-card class="metric-card">
-            <div class="metric-value" :class="getResponseTimeClass(report.summary.max_response_time)">
-              {{ report.summary.max_response_time }}ms
-            </div>
-            <div class="metric-label">{{ t('report.maxResponseTime') }}</div>
-          </el-card>
-        </el-col>
-      </el-row>
-
-      <!-- Percentiles Chart -->
-      <el-row :gutter="16" class="chart-row">
-        <el-col :xs="24" :sm="24" :md="12">
-          <el-card>
-              <template #header>
-                <span>{{ t('report.percentile') }}</span>
-              </template>
-              <v-chart class="chart" :option="percentileChartOption" autoresize />
-            </el-card>
-          </el-col>
-          <el-col :xs="24" :sm="24" :md="12">
-            <el-card>
-              <template #header>
-                <span>{{ t('report.metricsTitle') }}</span>
-              </template>
-              <div class="perf-table">
-                <div class="perf-row">
-                  <span class="perf-label">{{ t('report.p50') }}</span>
-                  <span class="perf-value">{{ report.summary.percentiles.p50 }}ms</span>
-                </div>
-                <div class="perf-row">
-                  <span class="perf-label">{{ t('report.p90') }}</span>
-                  <span class="perf-value">{{ report.summary.percentiles.p90 }}ms</span>
-                </div>
-                <div class="perf-row">
-                  <span class="perf-label">{{ t('report.p95') }}</span>
-                  <span class="perf-value">{{ report.summary.percentiles.p95 }}ms</span>
-                </div>
-                <div class="perf-row">
-                  <span class="perf-label">{{ t('report.p99') }}</span>
-                  <span class="perf-value">{{ report.summary.percentiles.p99 }}ms</span>
-                </div>
-              <div class="perf-row">
-                <span class="perf-label">{{ t('report.receiveRate') }}</span>
-                <span class="perf-value">{{ formatBytes(report.summary.received_bytes_per_sec) }}/s</span>
-              </div>
-              <div class="perf-row">
-                <span class="perf-label">{{ t('report.sendRate') }}</span>
-                <span class="perf-value">{{ formatBytes(report.summary.sent_bytes_per_sec) }}/s</span>
-              </div>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
-
-      <!-- Timeline Performance Data -->
-      <el-card v-if="report.summary?.timeline_segments?.length" class="timeline-card">
-        <template #header>
-            <div class="card-header-title">
-              <el-icon size="18" color="#f59e0b"><Timer /></el-icon>
-              <span>{{ t('report.timeSeries') }}</span>
-            </div>
-          </template>
-          <div class="table-wrapper">
-            <el-table :data="report.summary.timeline_segments" size="small" stripe class="report-table">
-              <el-table-column prop="time_range" :label="t('report.timeSeriesTable.timeRange')" width="100" class-name="col-time-range" />
-              <el-table-column prop="request_count" :label="t('report.timeSeriesTable.requests')" width="80" class-name="col-requests" />
-              <el-table-column prop="avg_response_time" :label="t('report.timeSeriesTable.avg')" width="110" class-name="col-avg">
-                <template #default="{ row }">
-                  <span :class="getResponseTimeClass(row.avg_response_time)">{{ row.avg_response_time }}ms</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="max_response_time" :label="t('report.timeSeriesTable.max')" width="110" class-name="col-max" />
-              <el-table-column prop="throughput" :label="t('report.timeSeriesTable.throughput')" width="110" class-name="col-throughput" />
-              <el-table-column prop="error_rate" :label="t('report.timeSeriesTable.errorRate')" width="90" class-name="col-error">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.error_rate > 5 ? 'danger' : row.error_rate > 0 ? 'warning' : 'success'">
-                  {{ row.error_rate }}%
-                </el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-          </div>
-      </el-card>
-
-      <!-- Error Details -->
-      <el-card v-if="report.summary?.error_details?.length" class="error-card">
-        <template #header>
-            <div class="card-header-title">
-              <el-icon size="18" color="#ef4444"><Warning /></el-icon>
-              <span>{{ t('report.errorAnalysis') }}</span>
-            </div>
-          </template>
-          <el-table :data="report.summary.error_details" size="small" stripe>
-            <el-table-column prop="error_type" :label="t('report.errorType')" min-width="200" show-overflow-tooltip />
-            <el-table-column prop="count" :label="t('report.errorCount')" width="90" />
-            <el-table-column prop="percentage" :label="t('report.errorRatio')" width="100">
-              <template #default="{ row }">
-                <el-progress :percentage="row.percentage" :color="row.percentage > 10 ? '#ef4444' : '#f59e0b'" />
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('report.errorExample')" min-width="200" show-overflow-tooltip>
-            <template #default="{ row }">
-              {{ row.sample_messages?.[0] || '-' }}
-            </template>
-          </el-table-column>
-        </el-table>
-      </el-card>
-
-      <!-- AI Analysis -->
-      <el-card v-if="report.ai_analysis" class="ai-analysis">
-        <template #header>
-          <div class="analysis-header">
-            <el-icon size="20" color="#f59e0b"><Cpu /></el-icon>
-            <span>{{ t('report.aiAnalysis') }}</span>
-          </div>
-        </template>
-        
-        <div class="analysis-content">
-          <el-alert :title="t('report.evidenceWarning')" type="warning" :closable="false" show-icon />
-          <!-- 整体评估 -->
-          <div class="analysis-section assessment">
-            <h4><el-icon><InfoFilled /></el-icon> {{ t('report.evaluation') }}</h4>
-            <p>{{ report.ai_analysis.overall_assessment }}</p>
-          </div>
-
-        <el-row :gutter="20">
-          <el-col :xs="24" :sm="24" :md="12">
-            <div class="analysis-section">
-              <h4><el-icon><Search /></el-icon> {{ t('report.keyFindings') }}</h4>
-              <ul>
-                <li v-for="(item, i) in report.ai_analysis.key_findings" :key="i">{{ item }}</li>
-              </ul>
-            </div>
-          </el-col>
-          <el-col :xs="24" :sm="24" :md="12">
-            <div class="analysis-section issue-section">
-              <h4><el-icon><WarningFilled /></el-icon> {{ t('report.issueLocation') }}</h4>
-              <ul>
-                <li v-for="(item, i) in report.ai_analysis.specific_issues" :key="i">{{ item }}</li>
-              </ul>
-            </div>
-          </el-col>
-        </el-row>
-
-        <div v-if="report.ai_analysis.timeline_analysis" class="analysis-section timeline-section">
-          <h4><el-icon><Timer /></el-icon> {{ t('report.timelineAnalysis') }}</h4>
-            <p>{{ report.ai_analysis.timeline_analysis }}</p>
-          </div>
-
-          <!-- 资源瓶颈 + 错误分析 -->
-          <el-row :gutter="20">
-            <el-col :xs="24" :sm="24" :md="12">
-              <div class="analysis-section">
-                <h4><el-icon><Monitor /></el-icon> {{ t('report.resourceBottleneck') }}</h4>
-                <ul>
-                  <li v-for="(item, i) in report.ai_analysis.resource_bottlenecks" :key="i">{{ item }}</li>
-                </ul>
-              </div>
-            </el-col>
-            <el-col :xs="24" :sm="24" :md="12">
-              <div class="analysis-section">
-                <h4><el-icon><CircleCloseFilled /></el-icon> {{ t('report.errorRootCause') }}</h4>
-                <ul>
-                  <li v-for="(item, i) in report.ai_analysis.error_analysis" :key="i">{{ item }}</li>
-                </ul>
-              </div>
-            </el-col>
-          </el-row>
-
-          <el-row :gutter="20">
-            <el-col :xs="24" :sm="24" :md="12">
-              <div class="analysis-section">
-                <h4><el-icon><TrendCharts /></el-icon> {{ t('report.bottleneck') }}</h4>
-                <ul>
-                  <li v-for="(item, i) in report.ai_analysis.performance_bottlenecks" :key="i">{{ item }}</li>
-                </ul>
-              </div>
-            </el-col>
-            <el-col :xs="24" :sm="24" :md="12">
-              <div class="analysis-section">
-                <h4><el-icon><Lightning /></el-icon> {{ t('report.optimization') }}</h4>
-                <ul>
-                  <li v-for="(item, i) in report.ai_analysis.recommendations" :key="i">{{ item }}</li>
-                </ul>
-              </div>
-            </el-col>
-          </el-row>
-
-          <div v-if="report.ai_analysis.improvement_plan?.length" class="analysis-section improvement-section">
-            <h4><el-icon><List /></el-icon> {{ t('report.improvementPlan') }}</h4>
-            <el-timeline>
-              <el-timeline-item
-                v-for="(item, i) in report.ai_analysis.improvement_plan"
-                :key="i"
-                :type="i === 0 ? 'primary' : i === 1 ? 'warning' : 'info'"
-              >
-                {{ item }}
-              </el-timeline-item>
-            </el-timeline>
-          </div>
-
-          <div v-if="report.ai_analysis.risk_areas?.length" class="analysis-section risk-section">
-            <h4><el-icon><Warning /></el-icon> {{ t('report.riskAreas') }}</h4>
-            <ul>
-              <li v-for="(item, i) in report.ai_analysis.risk_areas" :key="i">{{ item }}</li>
-            </ul>
-          </div>
-          
-          <!-- 结论 -->
-          <div class="analysis-section conclusion">
-            <h4><el-icon><CircleCheckFilled /></el-icon> {{ t('report.conclusion') }}</h4>
-            <p>{{ report.ai_analysis.conclusion }}</p>
+      <header class="report-head">
+        <div class="title-block">
+          <router-link :to="`/executions?projectId=${report.project_id}`" class="back">← {{ L('执行记录', 'Runs') }}</router-link>
+          <h2>{{ report.test_plan_name }}</h2>
+          <div class="meta num">
+            <span>{{ formatTime(report.start_time) }}</span>
+            <span>{{ L('时长', 'Duration') }} {{ formatDuration(report.start_time, report.end_time) }}</span>
+            <span>ID {{ report.execution_id }}</span>
+            <router-link :to="`/projects/${report.project_id}`">{{ L('所属项目', 'Project') }}</router-link>
           </div>
         </div>
-      </el-card>
-      
-      <el-card v-else class="ai-analysis">
-        <template #header>
-          <span>{{ t('report.aiTab') }}</span>
-        </template>
-        <el-empty :description="t('report.aiNotEnabled')" />
-      </el-card>
-
-      <el-card v-if="dashboardData" class="dashboard-insights">
-        <template #header><span>{{ t('report.dashboardInsight') }}</span></template>
-        <div v-if="dashboardData.insights?.length">
-          <div v-for="(insight,i) in dashboardData.insights" :key="i" class="insight-item">{{ insight }}</div>
-        </div>
-        <div v-if="dashboardData.transactions?.length" style="margin-top:12px">
-          <h4 style="margin:0 0 8px">{{ t('report.endpointsTitle') }}</h4>
-          <el-table :data="dashboardData.transactions" size="small" max-height="300">
-            <el-table-column prop="name" :label="t('report.endpointsTable.endpoint')" min-width="150"/>
-            <el-table-column prop="sample_count" :label="t('report.endpointsTable.samples')" width="90"/>
-            <el-table-column prop="avg_response_time" :label="t('report.endpointsTable.avg')" width="100"/>
-            <el-table-column prop="p99_response_time" label="P99(ms)" width="90"/>
-            <el-table-column prop="error_pct" :label="t('report.endpointsTable.errorRate')" width="80"/>
-            <el-table-column prop="throughput" :label="t('report.endpointsTable.throughput')" width="80"/>
-          </el-table>
-        </div>
-      </el-card>
-
-      <el-card v-if="anomalies" class="anomaly-card">
-        <template #header>
-          <div class="card-header-flex">
-            <span>{{ t('report.anomalyDetection') }}</span>
-            <el-tag size="small" :type="anomalies.health_score > 80 ? 'success' : anomalies.health_score > 50 ? 'warning' : 'danger'">{{ t('report.healthScore') }} {{ anomalies.health_score }}</el-tag>
-          </div>
-        </template>
-        <p v-if="anomalies.total_anomalies === 0" style="color:#16A34A">{{ t('report.noAnomaly') }}</p>
-        <div v-else>
-          <p style="color:#DC2626">{{ t('report.anomalyCount', { count: anomalies.total_anomalies }) }}</p>
-          <div v-for="(a,i) in anomalies.anomalies.slice(0,10)" :key="i" class="anomaly-item"
-               :class="{ high: a.severity==='high', medium: a.severity==='medium' }">
-            <span class="sev-tag">{{ a.severity }}</span>
-            {{ a.description }}
-          </div>
-        </div>
-      </el-card>
-
-      <!-- Raw Data Download -->
-      <el-card>
-        <template #header>
-          <span>{{ t('report.rawDataTab') }}</span>
-        </template>
-        <div class="raw-data">
-          <el-button @click="downloadJTL">{{ t('report.downloadJtl') }}</el-button>
+        <div class="head-actions">
+          <el-button v-if="report.raw_data_path" @click="downloadJTL">{{ t('report.downloadJtl') }}</el-button>
           <el-button v-if="report.html_report_path" @click="openHtmlReport">{{ t('report.viewHtml') }}</el-button>
-          <el-button type="success" @click="loadDashboardData">{{ t('report.refreshInsights') }}</el-button>
-          <el-button type="warning" @click="loadAnomalies">{{ t('report.detectAnomaly') }}</el-button>
+          <el-button v-if="report.ai_analysis" @click="downloadAnalysis">{{ L('下载 AI 分析', 'Download AI analysis') }}</el-button>
         </div>
-      </el-card>
+      </header>
+
+      <section :class="['verdict-banner', banner.tone]">
+        <div class="verdict-main">
+          <span class="verdict-label">{{ banner.title }}</span>
+          <span class="verdict-detail">{{ banner.detail }}</span>
+        </div>
+        <div v-if="historyLines.length" class="verdict-history">
+          <span v-for="line in historyLines" :key="line.text" :class="line.tone">{{ line.text }}</span>
+        </div>
+      </section>
+
+      <section class="kpis">
+        <div v-for="kpi in kpis" :key="kpi.label" class="kpi">
+          <div class="kpi-label">{{ kpi.label }}</div>
+          <div :class="['kpi-value', 'num', kpi.tone]">{{ kpi.value }}</div>
+        </div>
+      </section>
+
+      <el-tabs v-model="activeTab" class="report-tabs">
+        <el-tab-pane :label="L('判定与证据', 'Verdict & evidence')" name="evidence">
+          <EvidencePanel :evidence="report.evidence" :sla-result="report.sla_result" :project-id="report.project_id"
+            :timeline="report.summary?.timeline_segments" @updated="report.evidence = $event" />
+        </el-tab-pane>
+
+        <el-tab-pane :label="L('趋势', 'Trends')" name="trends" lazy>
+          <section class="panel">
+            <div class="panel-head"><h3>{{ L('响应时间与吞吐量', 'Response time and throughput') }}</h3></div>
+            <v-chart v-if="timeline.length" class="chart" :option="trendOption" autoresize />
+            <p v-else class="hint">{{ L('本次执行没有时间段数据', 'No time-segment data for this run') }}</p>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h3>{{ L('分位数', 'Percentiles') }}</h3></div>
+            <div class="percentiles">
+              <v-chart class="chart small" :option="percentileOption" autoresize />
+              <dl class="facts num">
+                <template v-for="item in percentileFacts" :key="item.label">
+                  <dt>{{ item.label }}</dt><dd>{{ item.value }}</dd>
+                </template>
+              </dl>
+            </div>
+          </section>
+          <section v-if="timeline.length" class="panel">
+            <div class="panel-head"><h3>{{ L('分段数据', 'Segments') }}</h3></div>
+            <el-table :data="timeline" size="small" max-height="360">
+              <el-table-column prop="time_range" :label="t('report.timeSeriesTable.timeRange')" width="110" />
+              <el-table-column :label="t('report.timeSeriesTable.requests')" align="right"><template #default="{ row }"><span class="num">{{ row.request_count }}</span></template></el-table-column>
+              <el-table-column label="Avg" align="right"><template #default="{ row }"><span class="num">{{ formatMs(row.avg_response_time) }}</span></template></el-table-column>
+              <el-table-column label="Max" align="right"><template #default="{ row }"><span class="num">{{ formatMs(row.max_response_time) }}</span></template></el-table-column>
+              <el-table-column label="TPS" align="right"><template #default="{ row }"><span class="num">{{ formatTps(row.throughput) }}</span></template></el-table-column>
+              <el-table-column :label="L('错误率', 'Errors')" align="right">
+                <template #default="{ row }"><span :class="['num', { bad: row.error_rate > 0 }]">{{ formatPct(row.error_rate) }}</span></template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </el-tab-pane>
+
+        <el-tab-pane :label="L(`接口明细 ${transactions.length}`, `Transactions ${transactions.length}`)" name="transactions" lazy>
+          <section class="panel">
+            <el-table :data="transactions" size="small" :default-sort="{ prop: 'p95_response_time', order: 'descending' }"
+              :empty-text="L('没有接口级数据', 'No per-transaction data')">
+              <el-table-column prop="label" :label="L('接口', 'Transaction')" min-width="220" sortable show-overflow-tooltip />
+              <el-table-column prop="count" :label="L('样本数', 'Samples')" width="100" align="right" sortable><template #default="{ row }"><span class="num">{{ row.count }}</span></template></el-table-column>
+              <el-table-column prop="avg_response_time" label="Avg" width="96" align="right" sortable><template #default="{ row }"><span class="num">{{ formatMs(row.avg_response_time) }}</span></template></el-table-column>
+              <el-table-column prop="p90_response_time" label="P90" width="96" align="right" sortable><template #default="{ row }"><span class="num">{{ formatMs(row.p90_response_time) }}</span></template></el-table-column>
+              <el-table-column prop="p95_response_time" label="P95" width="96" align="right" sortable><template #default="{ row }"><span class="num">{{ formatMs(row.p95_response_time) }}</span></template></el-table-column>
+              <el-table-column prop="p99_response_time" label="P99" width="96" align="right" sortable><template #default="{ row }"><span class="num">{{ formatMs(row.p99_response_time) }}</span></template></el-table-column>
+              <el-table-column prop="max_response_time" label="Max" width="96" align="right" sortable><template #default="{ row }"><span class="num">{{ formatMs(row.max_response_time) }}</span></template></el-table-column>
+              <el-table-column prop="error_rate" :label="L('错误率', 'Errors')" width="96" align="right" sortable>
+                <template #default="{ row }"><span :class="['num', { bad: row.error_rate > 0 }]">{{ formatPct(row.error_rate) }}</span></template>
+              </el-table-column>
+              <el-table-column prop="throughput" label="TPS" width="84" align="right" sortable><template #default="{ row }"><span class="num">{{ formatTps(row.throughput) }}</span></template></el-table-column>
+            </el-table>
+          </section>
+        </el-tab-pane>
+
+        <el-tab-pane :label="L(`错误 ${errors.length}`, `Errors ${errors.length}`)" name="errors" lazy>
+          <section class="panel">
+            <el-table :data="errors" size="small" :empty-text="L('没有错误', 'No errors')">
+              <el-table-column prop="error_type" :label="t('report.errorType')" min-width="200" show-overflow-tooltip />
+              <el-table-column :label="t('report.errorCount')" width="90" align="right"><template #default="{ row }"><span class="num">{{ row.count }}</span></template></el-table-column>
+              <el-table-column :label="t('report.errorRatio')" width="90" align="right"><template #default="{ row }"><span class="num">{{ formatPct(row.percentage) }}</span></template></el-table-column>
+              <el-table-column :label="t('report.errorExample')" min-width="260" show-overflow-tooltip>
+                <template #default="{ row }"><span class="mono">{{ row.sample_messages?.[0] || '-' }}</span></template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </el-tab-pane>
+
+        <el-tab-pane :label="L('AI 分析', 'AI analysis')" name="ai" lazy>
+          <section v-if="ai" class="panel ai-analysis">
+            <el-alert :title="t('report.evidenceWarning')" type="warning" :closable="false" show-icon />
+            <div class="ai-block lead">
+              <h4>{{ t('report.evaluation') }}</h4>
+              <p>{{ ai.overall_assessment }}</p>
+            </div>
+            <div class="ai-grid">
+              <div v-for="block in aiLists" :key="block.title" class="ai-block">
+                <h4>{{ block.title }}</h4>
+                <ul><li v-for="(item, i) in block.items" :key="i">{{ item }}</li></ul>
+              </div>
+            </div>
+            <div v-if="ai.timeline_analysis" class="ai-block">
+              <h4>{{ t('report.timelineAnalysis') }}</h4>
+              <p>{{ ai.timeline_analysis }}</p>
+            </div>
+            <div v-if="ai.improvement_plan?.length" class="ai-block">
+              <h4>{{ t('report.improvementPlan') }}</h4>
+              <ol><li v-for="(item, i) in ai.improvement_plan" :key="i">{{ item }}</li></ol>
+            </div>
+            <div v-if="ai.conclusion" class="ai-block">
+              <h4>{{ t('report.conclusion') }}</h4>
+              <p>{{ ai.conclusion }}</p>
+            </div>
+          </section>
+          <section v-else class="panel"><el-empty :description="t('report.aiNotEnabled')" /></section>
+        </el-tab-pane>
+      </el-tabs>
     </template>
-    
-    <el-empty v-else :description="t('report.notFound')" />
+
+    <el-empty v-else-if="!loading" :description="t('report.notFound')" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ElMessage } from 'element-plus'
-import { ref, onMounted, computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { BarChart, LineChart } from 'echarts/charts'
@@ -438,666 +153,259 @@ import VChart from 'vue-echarts'
 import { api } from '@/api'
 import EvidencePanel from '@/components/EvidencePanel.vue'
 import { useI18n } from '@/composables/useI18n'
-import { Warning, CircleCheck } from '@element-plus/icons-vue'
+import { formatDuration, formatMs, formatPct, formatTime, formatTps } from '@/utils/format'
 
 use([CanvasRenderer, BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent])
 
-const { t } = useI18n()
-
+const { t, currentLang } = useI18n()
+const L = (zh: string, en: string) => currentLang.value === 'en' ? en : zh
 const route = useRoute()
-const loading = ref(false)
+
+const loading = ref(true)
 const report = ref<any>(null)
-const reportProjectId = computed(() => report.value?.project_id || 'default')
-const dashboardData = ref<any>(null)
-const anomalies = ref<any>(null)
-const comparisonEnabled = ref(true)
-const compareExecutionId = ref('')
-const compareExecutions = ref<any[]>([])
-const compareReport = ref<any>(null)
+const activeTab = ref('evidence')
 
-const percentileChartOption = computed(() => {
-  if (!report.value) return {}
-  const p = report.value.summary.percentiles
+const summary = computed(() => report.value?.summary || {})
+const timeline = computed<any[]>(() => summary.value.timeline_segments || [])
+const errors = computed<any[]>(() => summary.value.error_details || [])
+const transactions = computed(() => Object.entries(summary.value.per_label || {}).map(([label, stats]: [string, any]) => ({ label, ...stats })))
+const ai = computed(() => report.value?.ai_analysis || null)
+
+const banner = computed(() => {
+  const req = report.value?.evidence?.requirements
+  if (req && req.verdict !== 'none') {
+    const detail = L(`达标 ${req.passed} · 不达标 ${req.failed} · 无数据 ${req.missing}`, `${req.passed} met · ${req.failed} not met · ${req.missing} no data`)
+    if (req.verdict === 'pass') return { tone: 'pass', title: L('性能需求全部达标', 'All requirements met'), detail }
+    if (req.verdict === 'fail') return { tone: 'fail', title: L('性能需求未达标', 'Requirements not met'), detail }
+    return { tone: 'incomplete', title: L('部分需求无法评估', 'Some requirements could not be evaluated'), detail }
+  }
+  const violations = report.value?.sla_result?.violations?.length || 0
   return {
-    tooltip: { trigger: 'axis' },
-    backgroundColor: 'transparent',
-    textStyle: { color: '#6b7280' },
-    xAxis: {
-      type: 'category',
-      data: ['P50', 'P90', 'P95', 'P99'],
-      axisLine: { lineStyle: { color: '#e5e7eb' } },
-      axisLabel: { color: '#6b7280' }
-    },
-    yAxis: {
-      type: 'value',
-      name: t('report.responseTimeSeries'),
-      nameTextStyle: { color: '#6b7280' },
-      axisLine: { lineStyle: { color: '#e5e7eb' } },
-      axisLabel: { color: '#6b7280' },
-      splitLine: { lineStyle: { color: '#f3f4f6' } }
-    },
-    series: [{
-      data: [p.p50, p.p90, p.p95, p.p99],
-      type: 'bar',
-      itemStyle: {
-        color: (params: any) => {
-          const colors = ['#16A34A', '#2677FF', '#ff7300', '#DC2626']
-          return colors[params.dataIndex]
-        },
-        borderRadius: [6, 6, 0, 0]
-      },
-      label: {
-        show: true,
-        position: 'top',
-        formatter: '{c}ms',
-        color: '#374151'
-      }
-    }]
+    tone: violations ? 'fail' : 'neutral',
+    title: L('未设性能需求', 'No performance requirements'),
+    detail: violations ? L(`按默认阈值有 ${violations} 项超标`, `${violations} default thresholds exceeded`) : L('按默认阈值评估全部通过', 'All default thresholds passed'),
   }
 })
 
-const compareChartOption = computed(() => {
-  if (!report.value || !compareReport.value) return {}
-  const metrics = ['Avg RT', 'P99', 'Error Rate', 'Throughput']
-  const current = [
-    report.value.summary.avg_response_time,
-    report.value.summary.percentiles.p99,
-    report.value.summary.error_rate,
-    report.value.summary.throughput
+const historyLines = computed(() => {
+  const history = report.value?.evidence?.baseline
+  const text: Record<string, string> = {
+    regression: L('性能退化', 'regression'), mixed: L('有升有降', 'mixed'), improvement: L('性能提升', 'improved'),
+    stable: L('基本持平', 'stable'), unknown: L('无法比较', 'not comparable'),
+  }
+  const tone = (v: string) => (v === 'regression' ? 'bad' : v === 'improvement' ? 'good' : '')
+  return [
+    ...(history?.baseline ? [{ text: `${L('对比基线', 'vs baseline')}：${text[history.baseline.verdict]}`, tone: tone(history.baseline.verdict) }] : []),
+    ...(history?.previous ? [{ text: `${L('对比上一次', 'vs previous')}：${text[history.previous.verdict]}`, tone: tone(history.previous.verdict) }] : []),
   ]
-  const compare = [
-    compareReport.value.summary.avg_response_time,
-    compareReport.value.summary.percentiles.p99,
-    compareReport.value.summary.error_rate,
-    compareReport.value.summary.throughput
-  ]
+})
 
+const kpis = computed(() => {
+  const s = summary.value
+  return [
+    { label: L('总请求', 'Requests'), value: (s.total_requests ?? 0).toLocaleString() },
+    { label: L('平均响应', 'Avg'), value: formatMs(s.avg_response_time) },
+    { label: 'P95', value: formatMs(s.percentiles?.p95 ?? s.p95_response_time) },
+    { label: 'P99', value: formatMs(s.percentiles?.p99 ?? s.p99_response_time) },
+    { label: L('错误率', 'Error rate'), value: formatPct(s.error_rate), tone: s.error_rate > 0 ? 'bad' : '' },
+    { label: L('吞吐量 TPS', 'Throughput'), value: formatTps(s.throughput) },
+  ]
+})
+
+const formatBytes = (bytes?: number) => {
+  if (!bytes) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+  return `${parseFloat((bytes / 1024 ** i).toFixed(2))} ${units[i]}`
+}
+
+const percentileFacts = computed(() => {
+  const s = summary.value
+  const p = s.percentiles || {}
+  return [
+    { label: 'Min', value: formatMs(s.min_response_time) },
+    { label: 'P50', value: formatMs(p.p50) },
+    { label: 'P90', value: formatMs(p.p90) },
+    { label: 'P95', value: formatMs(p.p95) },
+    { label: 'P99', value: formatMs(p.p99) },
+    { label: 'Max', value: formatMs(s.max_response_time) },
+    { label: L('接收', 'Received'), value: `${formatBytes(s.received_bytes_per_sec)}/s` },
+    { label: L('发送', 'Sent'), value: `${formatBytes(s.sent_bytes_per_sec)}/s` },
+  ]
+})
+
+// Chart colors follow the CSS tokens so both themes stay legible.
+const cssVar = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim()
+const axisStyle = () => ({
+  axisLine: { lineStyle: { color: cssVar('--app-border-strong') } },
+  axisLabel: { color: cssVar('--app-text-muted') },
+  splitLine: { lineStyle: { color: cssVar('--app-border') } },
+})
+
+const trendOption = computed(() => ({
+  tooltip: { trigger: 'axis' },
+  legend: { top: 0, data: [L('平均响应时间', 'Avg response time'), 'TPS', L('错误率', 'Error rate')], textStyle: { color: cssVar('--app-text-secondary') } },
+  grid: { left: 56, right: 56, top: 48, bottom: 32 },
+  xAxis: { type: 'category', data: timeline.value.map(s => s.time_range), ...axisStyle() },
+  yAxis: [
+    { type: 'value', name: 'ms', ...axisStyle() },
+    { type: 'value', name: 'TPS / %', ...axisStyle(), splitLine: { show: false } },
+  ],
+  series: [
+    { name: L('平均响应时间', 'Avg response time'), type: 'line', showSymbol: false, data: timeline.value.map(s => s.avg_response_time), color: cssVar('--app-primary') },
+    { name: 'TPS', type: 'line', yAxisIndex: 1, showSymbol: false, data: timeline.value.map(s => s.throughput), color: cssVar('--app-success') },
+    { name: L('错误率', 'Error rate'), type: 'line', yAxisIndex: 1, showSymbol: false, data: timeline.value.map(s => s.error_rate), color: cssVar('--app-danger') },
+  ],
+}))
+
+const percentileOption = computed(() => {
+  const p = summary.value.percentiles || {}
   return {
     tooltip: { trigger: 'axis' },
-    legend: {
-      data: [t('report.current'), t('report.compare')],
-      top: 0
-    },
-    backgroundColor: 'transparent',
-    grid: { top: 40 },
-    xAxis: {
-      type: 'category',
-      data: metrics,
-      axisLine: { lineStyle: { color: '#e5e7eb' } },
-      axisLabel: { color: '#6b7280' }
-    },
-    yAxis: {
-      type: 'value',
-      axisLine: { lineStyle: { color: '#e5e7eb' } },
-      axisLabel: { color: '#6b7280' },
-      splitLine: { lineStyle: { color: '#f3f4f6' } }
-    },
-    series: [
-      {
-        name: t('report.current'),
-        type: 'bar',
-        data: current,
-        itemStyle: { color: '#2677FF', borderRadius: [4, 4, 0, 0] },
-        barGap: '10%'
-      },
-      {
-        name: t('report.compare'),
-        type: 'bar',
-        data: compare,
-        itemStyle: { color: '#94A3B8', borderRadius: [4, 4, 0, 0] }
-      }
-    ]
+    grid: { left: 56, right: 16, top: 24, bottom: 28 },
+    xAxis: { type: 'category', data: ['P50', 'P90', 'P95', 'P99'], ...axisStyle() },
+    yAxis: { type: 'value', name: 'ms', ...axisStyle() },
+    series: [{ type: 'bar', barWidth: '40%', data: [p.p50, p.p90, p.p95, p.p99], color: cssVar('--app-primary'),
+      label: { show: true, position: 'top', color: cssVar('--app-text-secondary'), formatter: '{c}' } }],
   }
 })
 
-const loadReport = async () => {
+const aiLists = computed(() => {
+  const a = ai.value
+  if (!a) return []
+  return [
+    { title: t('report.keyFindings'), items: a.key_findings },
+    { title: t('report.issueLocation'), items: a.specific_issues },
+    { title: t('report.bottleneck'), items: a.performance_bottlenecks },
+    { title: t('report.resourceBottleneck'), items: a.resource_bottlenecks },
+    { title: t('report.errorRootCause'), items: a.error_analysis },
+    { title: t('report.optimization'), items: a.recommendations },
+    { title: t('report.riskAreas'), items: a.risk_areas },
+  ].filter(block => block.items?.length)
+})
+
+async function loadReport() {
   const id = route.params.id as string
-  if (!id) return
-  
   loading.value = true
   try {
-    const res = await api.getReport(id)
-    report.value = res.data
-    await loadCompareExecutions()
-  } catch (e: any) {
+    report.value = (await api.getReport(id)).data
+  } catch {
     report.value = null
   } finally {
     loading.value = false
   }
 }
 
-const loadCompareExecutions = async () => {
-  if (!report.value) return
-  try {
-    const res = await api.getExecutions(report.value.project_id)
-    compareExecutions.value = (res.data?.executions || res.data || []).filter(
-      (e: any) => e.id !== report.value.execution_id && e.status === 'completed'
-    ).slice(0, 20)
-  } catch {
-    compareExecutions.value = []
-  }
-}
-
-const loadComparisonReport = async (id: string) => {
-  if (!id) return
-  try {
-    const res = await api.getReport(id)
-    compareReport.value = res.data
-  } catch {
-    compareReport.value = null
-  }
-}
-
-const getChange = (current: number, compare: number) => {
-  if (compare === 0) return 'N/A'
-  const percent = ((current - compare) / compare * 100)
-  const percentStr = percent.toFixed(1)
-  return `${percent > 0 ? '+' : ''}${percentStr}%`
-}
-
-const getChangeClass = (current: number, compare: number, higherIsBetter = false) => {
-  // No percentage exists against a zero baseline, but any rise from it still counts.
-  const percent = compare === 0 ? (current > 0 ? Infinity : 0) : (current - compare) / compare * 100
-  if (percent > 10) return higherIsBetter ? 'good' : 'bad'
-  if (percent < -10) return higherIsBetter ? 'bad' : 'good'
-  return ''
-}
-
-
-const getResponseTimeClass = (time: number) => {
-  if (time < 200) return 'good'
-  if (time < 500) return 'warning'
-  return 'danger'
-}
-
-const getErrorRateClass = (rate: number) => {
-  if (rate === 0) return 'good'
-  if (rate < 1) return 'warning'
-  return 'danger'
-}
-
-const formatTime = (time: string) => {
-  if (!time) return '-'
-  return new Date(time).toLocaleString()
-}
-
-const formatDuration = (start: string, end: string) => {
-  const diff = new Date(end).getTime() - new Date(start).getTime()
-  const minutes = Math.floor(diff / 60000)
-  const seconds = Math.floor((diff % 60000) / 1000)
-  return `${minutes}m ${seconds}s`
-}
-
-const formatBytes = (bytes: number) => {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-const downloadJTL = () => {
-  if (!report.value?.raw_data_path) return
-  const path = `/reports/${report.value.execution_id}/result.jtl`
+function downloadJTL() {
   const a = document.createElement('a')
-  a.href = path
+  a.href = `/reports/${report.value.execution_id}/result.jtl`
   a.download = `result_${report.value.execution_id}.jtl`
-  document.body.appendChild(a)
   a.click()
-  document.body.removeChild(a)
 }
 
-const loadDashboardData = async () => {
-  if (!report.value) return
+function openHtmlReport() {
+  window.open(`/reports/${report.value.execution_id}/html/index.html`, '_blank')
+}
+
+async function downloadAnalysis() {
   try {
-    const res = await api.getDashboardData(report.value.execution_id)
-    dashboardData.value = res.data
-  } catch { dashboardData.value = null }
+    const res = await api.downloadAnalysisReport(report.value.execution_id)
+    const url = URL.createObjectURL(new Blob([res.data], { type: 'text/markdown' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `ai_analysis_${report.value.execution_id}.md`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch {
+    ElMessage.error(L('AI 分析的 Markdown 文件不存在', 'The AI analysis Markdown file is not available'))
+  }
 }
 
-const loadAnomalies = async () => {
-  if (!report.value) return
-  try {
-    const res = await api.detectAnomalies(report.value.execution_id)
-    anomalies.value = res.data
-  } catch { anomalies.value = null }
-}
-
-const openHtmlReport = () => {
-  if (!report.value?.html_report_path) return
-  const path = `/reports/${report.value.execution_id}/html/index.html`
-  window.open(path, '_blank')
-}
-
-onMounted(async () => {
-  await loadReport()
-  loadDashboardData()
-  loadAnomalies()
-})
+onMounted(loadReport)
 </script>
 
 <style scoped lang="scss">
-.report-page {
-  max-width: 1400px;
-  margin: 0 auto;
+.report-page { max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; min-height: 200px; }
 
-  @media (max-width: 768px) {
-    padding: 0 16px;
-    box-sizing: border-box;
+.report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  .back { font-size: 13px; color: var(--app-text-muted); text-decoration: none; &:hover { color: var(--app-primary); } }
+  h2 { margin: 2px 0; font-size: 20px; font-weight: 600; color: var(--app-text); }
+  .meta {
+    display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--app-text-muted);
+    a { color: var(--app-primary); text-decoration: none; }
   }
-
-  .report-header {
-    margin-bottom: 18px;
-
-    .header-content {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 12px;
-
-      > div {
-        min-width: 0;
-      }
-
-      h2 {
-        margin: 0 0 6px 0;
-        font-size: 22px;
-        font-weight: 500;
-        color: var(--tavily-text-primary);
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .meta {
-        color: var(--tavily-text-secondary);
-        font-size: 13px;
-        margin: 0;
-        word-break: break-word;
-        overflow-wrap: break-word;
-      }
-    }
-  }
-
-  .metrics-row {
-    margin-bottom: 18px;
-
-    .metric-card {
-      text-align: center;
-      background: var(--tavily-bg-card);
-      border: 1px solid var(--tavily-border);
-      border-radius: var(--tavily-radius-xl);
-      transition: all 0.2s ease;
-      height: 100%;
-
-      &:hover {
-        border-color: var(--tavily-border-blue);
-        box-shadow: var(--tavily-shadow-md);
-      }
-
-      :deep(.el-card__body) {
-        padding: 18px 12px;
-        height: 100%;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-      }
-
-      .metric-value {
-        font-size: 26px;
-        font-weight: 500;
-        color: var(--tavily-text-primary);
-        margin-bottom: 6px;
-        letter-spacing: -0.02em;
-        line-height: 1.1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-
-        &.good { color: #16A34A; }
-        &.warning { color: #D97706; }
-        &.danger { color: #DC2626; }
-      }
-
-      .metric-label {
-        font-size: 12px;
-        color: var(--tavily-text-secondary);
-        font-weight: 500;
-      }
-    }
-  }
-
-  .chart-row {
-    margin-bottom: 18px;
-
-    .chart {
-      height: 300px;
-    }
-
-    .perf-table {
-      .perf-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 12px 0;
-        border-bottom: 1px solid var(--tavily-border);
-
-        &:last-child {
-          border-bottom: none;
-        }
-
-        .perf-label {
-          color: var(--tavily-text-secondary);
-          font-size: 14px;
-        }
-
-        .perf-value {
-          font-weight: 500;
-          color: var(--tavily-text-primary);
-          font-size: 14px;
-        }
-      }
-    }
-  }
-
-  .timeline-card,
-  .error-card {
-    margin-bottom: 18px;
-
-    .card-header-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 600;
-      font-size: 16px;
-      color: var(--tavily-text-primary);
-    }
-  }
-
-  .ai-analysis {
-    margin-bottom: 18px;
-
-    .analysis-header {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-weight: 700;
-      font-size: 17px;
-      color: var(--tavily-text-primary);
-
-      .el-icon {
-        color: var(--tavily-primary);
-      }
-    }
-
-    .analysis-content {
-      .analysis-section {
-        margin-bottom: 24px;
-        word-break: break-word;
-        overflow-wrap: break-word;
-
-        h4 {
-          font-size: 15px;
-          font-weight: 700;
-          color: var(--tavily-text-primary);
-          margin-bottom: 12px;
-          padding-left: 12px;
-          border-left: 3px solid var(--tavily-primary);
-          display: flex;
-          align-items: center;
-          gap: 8px;
-
-          .el-icon {
-            color: var(--tavily-primary);
-            font-size: 16px;
-          }
-        }
-
-        p {
-          line-height: 1.8;
-          color: var(--tavily-text-secondary);
-          font-size: 14px;
-        }
-
-        ul {
-          margin: 0;
-          padding-left: 20px;
-
-          li {
-            line-height: 1.8;
-            color: var(--tavily-text-secondary);
-            margin-bottom: 6px;
-            font-size: 14px;
-          }
-        }
-
-        &.assessment {
-          background: #fffbeb;
-          padding: 20px;
-          border-radius: var(--tavily-radius-xl);
-          border: 1px solid rgba(245, 158, 11, 0.2);
-        }
-
-        &.issue-section {
-          background: #fef2f2;
-          padding: 20px;
-          border-radius: var(--tavily-radius-xl);
-          border: 1px solid rgba(239, 68, 68, 0.15);
-
-          h4 {
-            border-left-color: #ef4444;
-            .el-icon { color: #ef4444; }
-          }
-
-          li {
-            color: #991b1b;
-          }
-        }
-
-        &.timeline-section {
-          background: #eff6ff;
-          padding: 20px;
-          border-radius: var(--tavily-radius-xl);
-          border: 1px solid rgba(59, 130, 246, 0.15);
-
-          h4 {
-            border-left-color: #3b82f6;
-            .el-icon { color: #3b82f6; }
-          }
-        }
-
-        &.improvement-section {
-          background: #f0fdf4;
-          padding: 20px;
-          border-radius: var(--tavily-radius-xl);
-          border: 1px solid rgba(34, 197, 94, 0.15);
-
-          h4 {
-            border-left-color: #22c55e;
-            .el-icon { color: #22c55e; }
-          }
-        }
-
-        &.risk-section {
-          background: #fff7ed;
-          padding: 20px;
-          border-radius: var(--tavily-radius-xl);
-          border: 1px solid rgba(249, 115, 22, 0.15);
-
-          h4 {
-            border-left-color: #f97316;
-            .el-icon { color: #f97316; }
-          }
-        }
-
-        &.conclusion {
-          background: #fffbeb;
-          padding: 20px;
-          border-radius: var(--tavily-radius-xl);
-          border: 1px solid rgba(245, 158, 11, 0.2);
-
-          p {
-            color: #92400e;
-            font-weight: 600;
-            font-size: 15px;
-          }
-        }
-      }
-    }
-  }
-
-  .raw-data {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-
-    .el-button {
-      width: auto;
-    }
-
-    :deep(.el-button + .el-button) {
-      margin-left: 0;
-    }
-  }
-  .dashboard-insights {
-    margin-bottom: 18px;
-    .insight-item { font-size: 14px; padding: 4px 0; color: var(--tavily-text-secondary); }
-  }
-  .anomaly-card {
-    margin-bottom: 18px;
-    .anomaly-item {
-      padding: 6px 10px; margin: 4px 0; border-radius: var(--tavily-radius-md); font-size: 13px;
-      background: var(--tavily-bg-card); border-left: 3px solid var(--tavily-border);
-      word-break: break-word;
-      overflow-wrap: break-word;
-      .sev-tag { font-size: 11px; padding: 0 6px; border-radius: var(--tavily-radius-sm); margin-right: 6px; font-weight: 600; text-transform: uppercase; }
-      &.high { border-left-color: #DC2626; .sev-tag { background: #FEE2E2; color: #DC2626; } }
-      &.medium { border-left-color: #D97706; .sev-tag { background: #FEF3C7; color: #D97706; } }
-    }
-  }
-
-  .compare-card {
-    margin-bottom: 18px;
-  }
-
-  .compare-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    margin-bottom: 16px;
-
-    .compare-select {
-      width: 100%;
-      max-width: 350px;
-    }
-
-    .el-button {
-      width: auto;
-    }
-  }
-
-  .compare-content {
-    .compare-section {
-      h4 {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--tavily-text-primary);
-        margin-bottom: 12px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid var(--tavily-primary);
-      }
-
-      .compare-metrics {
-        .compare-metric {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 8px;
-          min-width: 0;
-          padding: 10px 0;
-          border-bottom: 1px solid var(--tavily-border);
-
-          .label {
-            color: var(--tavily-text-secondary);
-            font-size: 13px;
-            min-width: 0;
-          }
-
-          .value {
-            font-weight: 500;
-            color: var(--tavily-text-primary);
-            font-size: 14px;
-            font-family: 'SF Mono', 'Cascadia Code', monospace;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-
-          .change {
-            font-size: 12px;
-            font-weight: 600;
-            margin-left: 8px;
-            padding: 2px 6px;
-            border-radius: var(--radius-sm);
-
-            &.good {
-              color: #16A34A;
-              background: #DCFCE7;
-            }
-
-            &.bad {
-              color: #DC2626;
-              background: #FEE2E2;
-            }
-          }
-        }
-      }
-    }
-  }
-
-  .compare-chart {
-    height: 250px;
-    margin-top: 16px;
-  }
-
-  .card-header-flex {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-  }
-
-
-  .table-wrapper {
-    overflow-x: auto;
-
-    .report-table {
-      min-width: 600px;
-    }
-  }
-
-  @media (max-width: 768px) {
-    .col-requests,
-    .col-max,
-    .col-throughput {
-      display: none;
-    }
-
-    .col-time-range {
-      width: 90px;
-    }
-
-    .col-avg {
-      width: 90px;
-    }
-
-    .col-error {
-      width: 80px;
-    }
-  }
+  .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+}
+
+.verdict-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px 24px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-radius: var(--app-radius-lg);
+  border: 1px solid var(--app-border);
+  border-left-width: 4px;
+  background: var(--app-surface);
+
+  &.pass { border-left-color: var(--app-success); .verdict-label { color: var(--app-success); } }
+  &.fail { border-left-color: var(--app-danger); .verdict-label { color: var(--app-danger); } }
+  &.incomplete { border-left-color: var(--app-warning); .verdict-label { color: var(--app-warning); } }
+  &.neutral { border-left-color: var(--app-border-strong); }
+
+  .verdict-main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .verdict-label { font-size: 17px; font-weight: 600; color: var(--app-text); }
+  .verdict-detail { color: var(--app-text-secondary); font-variant-numeric: tabular-nums; }
+  .verdict-history { display: flex; gap: 16px; font-size: 13px; color: var(--app-text-secondary); }
+  .bad { color: var(--app-danger); }
+  .good { color: var(--app-success); }
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius-lg);
+  background: var(--app-surface);
+  overflow: hidden;
+
+  @media (max-width: 900px) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  @media (max-width: 520px) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .kpi { padding: 12px 16px; border-right: 1px solid var(--app-border); &:last-child { border-right: none; } }
+  .kpi-label { font-size: 12px; color: var(--app-text-muted); }
+  .kpi-value { font-size: 22px; font-weight: 600; color: var(--app-text); margin-top: 2px; }
+  .kpi-value.bad { color: var(--app-danger); }
+}
+
+.report-tabs :deep(.el-tab-pane) { display: flex; flex-direction: column; gap: 16px; }
+
+.chart { height: 320px; }
+.chart.small { height: 240px; }
+.percentiles { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 24px; align-items: center;
+  @media (max-width: 768px) { grid-template-columns: 1fr; }
+}
+.facts {
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 13px;
+  dt { color: var(--app-text-muted); }
+  dd { margin: 0; text-align: right; color: var(--app-text); }
+}
+.bad { color: var(--app-danger); }
+.mono { font-family: var(--app-font-mono); font-size: 12px; }
+
+.ai-analysis { display: flex; flex-direction: column; gap: 16px; }
+.ai-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.ai-block {
+  h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; color: var(--app-text); }
+  p, li { color: var(--app-text-secondary); line-height: 1.7; }
+  ul, ol { margin: 0; padding-left: 20px; }
+  &.lead p { color: var(--app-text); }
 }
 </style>

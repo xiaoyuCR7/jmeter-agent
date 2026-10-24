@@ -1,6 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/views/Layout.vue'
 
+export const PROJECT_TABS = ['overview', 'requirements', 'plans', 'baselines', 'settings'] as const
+
 const router = createRouter({
   history: createWebHistory(),
   routes: [
@@ -8,88 +10,67 @@ const router = createRouter({
       path: '/',
       component: Layout,
       children: [
+        { path: '', redirect: '/projects' },
         {
-          path: '',
-          redirect: '/test-plans'
+          path: 'projects/:projectId?',
+          name: 'Projects',
+          component: () => import('@/views/Projects.vue'),
+          meta: { titleKey: 'route.projects', nav: '/projects' }
         },
         {
-          path: 'test-plans',
-          name: 'TestPlans',
-          component: () => import('@/views/TestPlans.vue'),
-          meta: { titleKey: 'route.testPlans' }
+          path: `projects/:projectId/:tab(${PROJECT_TABS.join('|')})`,
+          name: 'ProjectTab',
+          component: () => import('@/views/Projects.vue'),
+          meta: { titleKey: 'route.projects', nav: '/projects' }
         },
         {
           path: 'projects/:projectId/test-plans/create',
           name: 'CreateTestPlan',
           component: () => import('@/views/CreateTestPlan.vue'),
-          meta: { titleKey: 'route.createTestPlan' }
-        },
-        {
-          path: 'editor/:id',
-          name: 'JmxEditor',
-          component: () => import('@/views/JmxEditor.vue'),
-          meta: { titleKey: 'route.jmxEditor' }
+          meta: { titleKey: 'route.createTestPlan', nav: '/projects' }
         },
         {
           path: 'projects/:projectId/editor/:planId',
           name: 'TestCaseEditor',
           component: () => import('@/views/TestCaseEditor.vue'),
-          meta: { titleKey: 'route.testCaseEditor' }
+          meta: { titleKey: 'route.testCaseEditor', nav: '/projects' }
         },
         {
-          path: 'projects/:projectId/settings',
-          name: 'ProjectSettings',
-          component: () => import('@/views/ProjectSettings.vue'),
-          meta: { titleKey: 'route.projectSettings' }
+          path: 'start',
+          name: 'StartFromDocument',
+          component: () => import('@/views/StartFromDocument.vue'),
+          meta: { titleKey: 'route.start', nav: '/projects' }
         },
         {
           path: 'executions',
           name: 'Executions',
           component: () => import('@/views/Executions.vue'),
-          meta: { titleKey: 'route.executions' }
+          meta: { titleKey: 'route.executions', nav: '/executions' }
         },
         {
-          path: 'baselines',
-          name: 'Baselines',
-          component: () => import('@/views/Baselines.vue'),
-          meta: { titleKey: 'route.baselines' }
-        },
-        {
-          path: 'reports/:id',
+          // Not /reports/:id: the dev server proxies /reports to the backend's static report files.
+          path: 'executions/:id',
           name: 'Report',
           component: () => import('@/views/Report.vue'),
-          meta: { titleKey: 'route.report' }
-        },
-        {
-          path: 'ai-chat',
-          name: 'AIChat',
-          component: () => import('@/views/AIChat.vue'),
-          meta: { titleKey: 'route.aiChat' }
-        },
-        {
-          path: 'import',
-          name: 'OpenAPIImport',
-          component: () => import('@/views/OpenAPIImport.vue'),
-          meta: { titleKey: 'route.openApiImport' }
-        },
-        {
-          path: 'mcp',
-          name: 'MCPConnect',
-          component: () => import('@/views/MCPConnect.vue'),
-          meta: { titleKey: 'route.mcpConnect' }
-        },
-        {
-          path: 'analysis-reports',
-          name: 'AnalysisReports',
-          component: () => import('@/views/AnalysisReports.vue'),
-          meta: { titleKey: 'route.analysisReports' }
+          meta: { titleKey: 'route.report', nav: '/executions' }
         },
         {
           path: 'settings',
           name: 'Settings',
           component: () => import('@/views/Settings.vue'),
-          meta: { titleKey: 'route.settings' }
-        }
+          meta: { titleKey: 'route.settings', nav: '/settings' }
+        },
+        // Old addresses, kept so bookmarks still land somewhere sensible.
+        {
+          path: 'test-plans',
+          redirect: to => to.query.projectId ? `/projects/${to.query.projectId}/plans` : '/projects'
+        },
+        { path: 'baselines', redirect: '/projects' },
+        { path: 'ai-chat', redirect: '/start' },
+        { path: 'import', redirect: '/start' },
+        { path: 'analysis-reports', redirect: '/executions' },
+        { path: 'mcp', redirect: '/settings?tab=mcp' },
+        { path: ':pathMatch(.*)*', redirect: '/projects' }
       ]
     }
   ]

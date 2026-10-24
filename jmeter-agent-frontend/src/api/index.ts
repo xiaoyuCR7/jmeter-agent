@@ -236,7 +236,6 @@ instance.interceptors.response.use(
 export const api = {
   instance,
   getSystemInfo: () => instance.get('/system/info'),
-  getPathsConfig: () => instance.get('/system/paths'),
   updatePathsConfig: (data: any) => instance.put('/system/paths', data),
 
   getModels: () => instance.get('/ai/models'),
@@ -276,9 +275,7 @@ export const api = {
   generateTestPlan: (data: any) => instance.post('/test-plans/generate', data),
   generateTestPlanInProject: (projectId: string, data: any) =>
     instance.post(`/projects/${projectId}/test-plans/generate`, data),
-  getTestPlans: () => instance.get('/test-plans'),
   getProjectTestPlans: (projectId: string) => instance.get(`/projects/${projectId}/test-plans`),
-  getTestPlan: (id: string) => instance.get(`/test-plans/${id}`),
   deleteTestPlan: (id: string) => instance.delete(`/test-plans/${id}`),
   downloadTestPlan: (id: string) => instance.get(`/test-plans/${id}/download`, { responseType: 'blob' }),
   parseTestPlan: (id: string) => instance.get(`/test-plans/${id}/parse`),
@@ -292,19 +289,9 @@ export const api = {
   executeTest: (planId: string, aiModel?: string) =>
     instance.post(`/test-plans/${planId}/execute`, null, { params: { ai_model: aiModel } }),
   getExecutions: (projectId?: string) => instance.get('/executions', { params: projectId ? { project_id: projectId } : {} }),
-  getProjectExecutions: (projectId: string) => instance.get(`/projects/${projectId}/executions`),
-  getExecution: (id: string) => instance.get(`/executions/${id}`),
   cancelExecution: (id: string) => instance.post(`/executions/${id}/cancel`),
 
   runAgent: (data: AgentRunRequest) => instance.post<AgentRunResult>('/agent/run', data),
-  runAgentStream: async (data: AgentRunRequest, signal?: AbortSignal): Promise<Response> => {
-    signal?.throwIfAborted()
-    return fetch(`${baseURL}/agent/run/stream`, {
-      method: 'POST', signal,
-      headers: { 'Content-Type': 'application/json', 'Accept-Language': currentLang() },
-      body: JSON.stringify(data)
-    })
-  },
 
   runAIWorkflowStream: (data: any) => {
     const lang = currentLang()
@@ -323,40 +310,23 @@ export const api = {
 
   getReport: (id: string) => instance.get(`/executions/${id}/report`),
   getLog: (id: string, lines?: number) => instance.get(`/executions/${id}/log`, { params: { lines } }),
-  getHtmlReport: (id: string) => instance.get(`/executions/${id}/html-report`),
-  getDashboardData: (id: string) => instance.get(`/executions/${id}/dashboard-data`),
 
-  listAnalysisReports: (projectId?: string) => instance.get('/analysis/reports', { params: projectId ? { project_id: projectId } : {} }),
-  getAnalysisReport: (executionId: string) => instance.get(`/analysis/reports/${executionId}`),
   downloadAnalysisReport: (executionId: string) => instance.get(`/analysis/reports/${executionId}/download`, { responseType: 'blob' }),
 
-  runSelfHeal: (jmx_path: string, failed_execution_id: string, auto_re_run?: boolean) =>
-    instance.post('/agent/selfheal', null, { params: { jmx_path, failed_execution_id, auto_re_run } }),
 
   importOpenAPI: (url: string, execute?: boolean) =>
     instance.post('/openapi/import', { url, execute }),
 
-  detectAnomalies: (execution_id: string) =>
-    instance.post('/analysis/anomalies', null, { params: { execution_id } }),
 
   checkResources: () => instance.get('/system/resources'),
 
   getBaselines: (project_id?: string) => instance.get('/baselines', { params: project_id ? { project_id } : {} }),
-  getActiveBaseline: (project_id: string, test_plan_id?: string) =>
-    instance.get('/baselines/active', { params: { project_id, test_plan_id } }),
   createBaseline: ({ thresholds, metrics_snapshot, ...params }: any) =>
     instance.post('/baselines', { thresholds, metrics_snapshot }, { params }),
   activateBaseline: (id: number) => instance.post(`/baselines/${id}/activate`),
   deleteBaseline: (id: number) => instance.delete(`/baselines/${id}`),
 
-  uploadCSV: (file: File, project_id?: string) => {
-    const form = new FormData()
-    form.append('file', file)
-    return instance.post('/data/upload', form, { params: { project_id }, headers: { 'Content-Type': 'multipart/form-data' } })
-  },
-  getDataFiles: (project_id?: string) => instance.get('/data/files', { params: project_id ? { project_id } : {} }),
   previewCSV: (filepath: string, rows?: number) => instance.get('/data/preview', { params: { filepath, rows } }),
-  deleteDataFile: (filepath: string) => instance.delete('/data/files', { params: { filepath } }),
 
   pendingConfirmations: () => instance.get('/confirmations'),
   decideConfirmation: (id: string, approved: boolean) => instance.post(`/confirmations/${encodeURIComponent(id)}`, { approved }),

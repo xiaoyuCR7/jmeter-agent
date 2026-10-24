@@ -114,7 +114,7 @@ import { Delete, Plus } from '@element-plus/icons-vue'
 import { api, type PerformanceRequirements, type RequirementItem } from '@/api'
 import { useI18n } from '@/composables/useI18n'
 
-const props = defineProps<{ projectId: string }>()
+const props = defineProps<{ projectId: string; initialDoc?: string }>()
 const { currentLang } = useI18n()
 const L = (zh: string, en: string) => currentLang.value === 'en' ? en : zh
 
@@ -134,7 +134,7 @@ const draft = ref<PerformanceRequirements>(empty())
 const savedJson = ref(JSON.stringify(empty()))
 const hasSaved = ref(false)
 const dirty = computed(() => JSON.stringify(draft.value) !== savedJson.value)
-const docText = ref('')
+const docText = ref(props.initialDoc || '')
 const sourceName = ref('')
 const models = ref<any[]>([])
 const model = ref('')

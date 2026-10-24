@@ -249,7 +249,7 @@
           </template>
           <template #extra>
             <el-button type="primary" @click="executePlan">{{ t('createPlan.runNow') }}</el-button>
-            <el-button @click="router.push(projectId ? `/test-plans?projectId=${projectId}` : '/test-plans')">{{ t('createPlan.backToList') }}</el-button>
+            <el-button @click="router.push(projectId ? `/projects/${projectId}/plans` : '/projects')">{{ t('createPlan.backToList') }}</el-button>
           </template>
         </el-result>
       </div>

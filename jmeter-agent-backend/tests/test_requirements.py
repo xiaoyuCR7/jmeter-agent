@@ -145,3 +145,31 @@ async def test_requirements_round_trip_and_project_scoping(api):
     assert (await api.put('/api/v1/projects/shop/requirements', json=duplicate)).status_code == 422
     assert (await api.delete('/api/v1/projects/shop/requirements')).json() == {'deleted': True}
     assert (await api.get('/api/v1/projects/shop/requirements')).json() is None
+
+
+@pytest.mark.asyncio
+async def test_execution_list_rows_carry_plan_name_and_requirement_verdict(api, monkeypatch):
+    from datetime import datetime
+    from app.api.routes import list_executions
+    from app.models.schemas import TestExecutionInfo, TestExecutionStatus
+    body = {'items': [item(id='R1', value=500).model_dump()]}
+    assert (await api.put('/api/v1/projects/shop/requirements', json=body)).status_code == 200
+    plan = type('Plan', (), {'name': 'Checkout load'})()
+    monkeypatch.setattr(store, '_test_plans', {'plan-1': plan})
+
+    def run(run_id, start, run_summary):
+        return TestExecutionInfo(id=run_id, project_id='shop', test_plan_id='plan-1', jmx_path='x.jmx',
+                                 status=TestExecutionStatus.COMPLETED, start_time=start, summary=run_summary)
+    monkeypatch.setattr(store, '_executions', {
+        'old': run('old', datetime(2026, 1, 1), summary(p95_response_time=400)),
+        'new': run('new', datetime(2026, 2, 1), summary()),
+        'pending': run('pending', None, None),
+    })
+
+    rows = (await list_executions(project_id='shop', offset=0, limit=50))['executions']
+    assert [r['id'] for r in rows] == ['new', 'old', 'pending']
+    assert rows[0]['test_plan_name'] == 'Checkout load' and rows[0]['project_name'] == 'Shop'
+    assert rows[0]['requirements']['verdict'] == 'fail' and rows[1]['requirements']['verdict'] == 'pass'
+    assert rows[0]['metrics']['p95_response_time'] == 650
+    assert rows[2]['metrics'] is None and rows[2]['requirements'] is None
+    assert rows[0]['has_ai_analysis'] is False

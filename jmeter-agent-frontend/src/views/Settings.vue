@@ -1,7 +1,53 @@
 <template>
   <div class="settings">
-    <el-row :gutter="16">
-      <el-col :span="12" :xs="24" :sm="24" :md="12">
+    <el-tabs v-model="activeTab" class="settings-tabs" @tab-change="onTabChange">
+      <el-tab-pane :label="t('settings.aiModelConfig')" name="models">
+        <el-card>
+          <template #header>
+            <div class="card-header">
+              <span>{{ t('settings.aiModelConfig') }}</span>
+              <el-button type="primary" size="small" @click="openAddDialog">
+                <el-icon><Plus /></el-icon>{{ t('settings.addModel') }}
+              </el-button>
+            </div>
+          </template>
+          
+          <div class="table-scroll">
+            <el-table :data="customModelConfigs" style="width: 100%" v-loading="loading">
+              <el-table-column prop="id" :label="t('settings.table.id')" min-width="100" />
+            <el-table-column prop="enabled" :label="t('settings.table.status')" width="100">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
+                  {{ row.enabled ? t('settings.table.enabled') : t('settings.table.disabled') }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column :label="t('settings.table.actions')" min-width="200">
+              <template #default="{ row }">
+                <el-button link type="success" size="small" :loading="row.testing" @click="handleTest(row)">
+                  {{ t('settings.table.test') }}
+                </el-button>
+                <el-button link type="primary" size="small" @click="openEditDialog(row)">
+                  {{ t('settings.table.edit') }}
+                </el-button>
+                <el-button 
+                  link 
+                  type="danger" 
+                  size="small" 
+                  @click="handleDelete(row)"
+                >
+                  {{ t('settings.table.delete') }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          </div>
+        </el-card>
+      </el-tab-pane>
+      <el-tab-pane :label="t('layout.nav.mcp')" name="mcp" lazy>
+        <MCPConnectPanel />
+      </el-tab-pane>
+      <el-tab-pane :label="t('settings.systemInfo')" name="system">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -58,55 +104,8 @@
             </div>
           </div>
         </el-card>
-      </el-col>
-      
-      <el-col :span="12" :xs="24" :sm="24" :md="12">
-        <el-card>
-          <template #header>
-            <div class="card-header">
-              <span>{{ t('settings.aiModelConfig') }}</span>
-              <el-button type="primary" size="small" @click="openAddDialog">
-                <el-icon><Plus /></el-icon>{{ t('settings.addModel') }}
-              </el-button>
-            </div>
-          </template>
-          
-          <div class="table-scroll">
-            <el-table :data="customModelConfigs" style="width: 100%" v-loading="loading">
-              <el-table-column prop="id" :label="t('settings.table.id')" min-width="100" />
-            <el-table-column prop="enabled" :label="t('settings.table.status')" width="100">
-              <template #default="{ row }">
-                <el-tag size="small" :type="row.enabled ? 'success' : 'info'">
-                  {{ row.enabled ? t('settings.table.enabled') : t('settings.table.disabled') }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column :label="t('settings.table.actions')" min-width="200">
-              <template #default="{ row }">
-                <el-button link type="success" size="small" :loading="row.testing" @click="handleTest(row)">
-                  {{ t('settings.table.test') }}
-                </el-button>
-                <el-button link type="primary" size="small" @click="openEditDialog(row)">
-                  {{ t('settings.table.edit') }}
-                </el-button>
-                <el-button 
-                  link 
-                  type="danger" 
-                  size="small" 
-                  @click="handleDelete(row)"
-                >
-                  {{ t('settings.table.delete') }}
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-
-    <el-row :gutter="16" style="margin-top: 16px;">
-      <el-col :span="12" :xs="24" :sm="24" :md="12">
+      </el-tab-pane>
+      <el-tab-pane :label="t('settings.appearance')" name="appearance">
         <el-card>
           <template #header>
             <div class="card-header">
@@ -116,8 +115,8 @@
           <div class="theme-setting">
             <span class="theme-label">{{ t('settings.theme') }}</span>
             <el-radio-group v-model="appStore.currentTheme" size="small" @change="onThemeChange">
-              <el-radio-button label="light">{{ t('settings.light') }}</el-radio-button>
-              <el-radio-button label="dark">{{ t('settings.dark') }}</el-radio-button>
+              <el-radio-button value="light">{{ t('settings.light') }}</el-radio-button>
+              <el-radio-button value="dark">{{ t('settings.dark') }}</el-radio-button>
             </el-radio-group>
           </div>
           <p class="hint">{{ t('settings.themeHint') }}</p>
@@ -127,15 +126,15 @@
           <div class="theme-setting">
             <span class="theme-label">{{ t('settings.language') }}</span>
             <el-radio-group v-model="appStore.currentLang" size="small" @change="onLangChange">
-              <el-radio-button label="zh-CN">{{ t('settings.language.chinese') }}</el-radio-button>
-              <el-radio-button label="en">English</el-radio-button>
+              <el-radio-button value="zh-CN">{{ t('settings.language.chinese') }}</el-radio-button>
+              <el-radio-button value="en">English</el-radio-button>
             </el-radio-group>
           </div>
           <p class="hint">{{ t('settings.languageHint') }}</p>
         </el-card>
-      </el-col>
-    </el-row>
-    
+      </el-tab-pane>
+    </el-tabs>
+
     <!-- 添加/编辑模型对话框 -->
     <el-dialog
       v-model="dialogVisible"
@@ -206,8 +205,16 @@ import { Plus } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import { useAppStore } from '@/store'
 import { useI18n } from '@/composables/useI18n'
+import { useRoute, useRouter } from 'vue-router'
+import MCPConnectPanel from '@/components/MCPConnectPanel.vue'
 
 const { t, setLang } = useI18n()
+
+const route = useRoute()
+const router = useRouter()
+const SETTINGS_TABS = ['models', 'mcp', 'system', 'appearance']
+const activeTab = ref(SETTINGS_TABS.includes(route.query.tab as string) ? route.query.tab as string : 'models')
+const onTabChange = (name: string | number) => router.replace({ query: name === 'models' ? {} : { tab: String(name) } })
 
 const dialogWidth = ref('560px')
 

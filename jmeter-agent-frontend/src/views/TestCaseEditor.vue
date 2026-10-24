@@ -11,8 +11,10 @@
         <el-tag v-if="projectId" size="small" type="info" style="margin-left: 8px">
           {{ projectName || projectId }}
         </el-tag>
+        <el-segmented :model-value="viewMode" :options="viewModeOptions" size="small" class="view-switch"
+          :disabled="switchingView" @change="switchView" />
       </div>
-      <div class="toolbar-center">
+      <div v-if="viewMode === 'form'" class="toolbar-center">
         <EnvironmentSelector
           :environments="envList"
           :active-env-id="activeEnvId"
@@ -22,7 +24,7 @@
           @copy-env="handleCopyEnv"
         />
       </div>
-      <div class="toolbar-right">
+      <div v-if="viewMode === 'form'" class="toolbar-right">
         <el-button @click="handleSave" :loading="saving">
           <el-icon><DocumentChecked /></el-icon> {{ t('editor.save') }}
         </el-button>
@@ -32,7 +34,6 @@
         <el-button @click="handleViewSource">
           <el-icon><Document /></el-icon> {{ t('editor.viewJmx') }}
         </el-button>
-        <el-button @click="router.push(`/editor/${planId}`)">JMX 编辑器</el-button>
         <el-button @click="functionHelperVisible = true">
           <span class="fx-label">fx</span> {{ t('editor.functionHelper') }}
         </el-button>
@@ -40,14 +41,14 @@
     </div>
 
     <!-- Body: 3-panel layout -->
-    <div class="editor-body">
+    <div v-if="viewMode === 'form'" class="editor-body">
       <!-- Left: Thread Group Config + Endpoint List -->
       <div class="left-panel">
         <div class="thread-group-config">
           <div class="config-header">
             <el-icon><User /></el-icon> {{ t('editor.threadGroup') }}
           </div>
-          <p v-if="threadGroupNode" class="csv-hint">仅配置首个线程组：{{ threadGroupNode.testname }}。复杂配置请使用 JMX 编辑器。</p>
+          <p v-if="threadGroupNode" class="csv-hint">仅配置首个线程组：{{ threadGroupNode.testname }}。复杂配置请切换到 JMX 树视图。</p>
           <el-form label-position="top" size="small" class="tg-form">
             <el-row :gutter="8">
               <el-col :span="12">
@@ -55,7 +56,7 @@
                   <el-input-number v-if="canEditNumber(threadGroupNumberValue('ThreadGroup.num_threads', 1), 1, 10000)" v-model="threadGroupConfig.numThreads" :min="1" :max="10000" style="width: 100%" />
                   <template v-else>
                     <el-input :model-value="String(threadGroupNumberValue('ThreadGroup.num_threads', 1))" readonly />
-                    <span class="csv-hint">保留原始值；请使用 JMX 编辑器修改。</span>
+                    <span class="csv-hint">保留原始值；请切换到 JMX 树视图修改。</span>
                   </template>
                 </el-form-item>
               </el-col>
@@ -64,7 +65,7 @@
                   <el-input-number v-if="canEditNumber(threadGroupNumberValue('ThreadGroup.ramp_time', 1), 0, 3600)" v-model="threadGroupConfig.rampTime" :min="0" :max="3600" style="width: 100%" />
                   <template v-else>
                     <el-input :model-value="String(threadGroupNumberValue('ThreadGroup.ramp_time', 1))" readonly />
-                    <span class="csv-hint">保留原始值；请使用 JMX 编辑器修改。</span>
+                    <span class="csv-hint">保留原始值；请切换到 JMX 树视图修改。</span>
                   </template>
                   <span class="unit">秒</span>
                 </el-form-item>
@@ -76,7 +77,7 @@
                   <el-input-number v-if="canEditNumber(threadGroupNumberValue('loops', 1), -1, 99999)" v-model="threadGroupConfig.loops" :min="-1" :max="99999" style="width: 100%" />
                   <template v-else>
                     <el-input :model-value="String(threadGroupNumberValue('loops', 1))" readonly />
-                    <span class="csv-hint">保留原始值；请使用 JMX 编辑器修改。</span>
+                    <span class="csv-hint">保留原始值；请切换到 JMX 树视图修改。</span>
                   </template>
                   <span class="unit">{{ t('editor.tg.infinite') }}</span>
                 </el-form-item>
@@ -102,7 +103,7 @@
                   <el-input-number v-if="canEditNumber(threadGroupNumberValue('ThreadGroup.duration', 0), 1, 86400)" v-model="threadGroupConfig.duration" :min="1" :max="86400" style="width: 100%" />
                   <template v-else>
                     <el-input :model-value="String(threadGroupNumberValue('ThreadGroup.duration', 0))" readonly />
-                    <span class="csv-hint">保留原始值；请使用 JMX 编辑器修改。</span>
+                    <span class="csv-hint">保留原始值；请切换到 JMX 树视图修改。</span>
                   </template>
                   <span class="unit">秒</span>
                 </el-form-item>
@@ -112,7 +113,7 @@
                   <el-input-number v-if="canEditNumber(threadGroupNumberValue('ThreadGroup.delay', 0), 0, 86400)" v-model="threadGroupConfig.delay" :min="0" :max="86400" style="width: 100%" />
                   <template v-else>
                     <el-input :model-value="String(threadGroupNumberValue('ThreadGroup.delay', 0))" readonly />
-                    <span class="csv-hint">保留原始值；请使用 JMX 编辑器修改。</span>
+                    <span class="csv-hint">保留原始值；请切换到 JMX 树视图修改。</span>
                   </template>
                   <span class="unit">秒</span>
                 </el-form-item>
@@ -450,7 +451,7 @@
                       <el-input-number v-if="canEditNumber(selectedEndpoint._rawTimeout ?? selectedEndpoint.settings.timeout, 0, Number.MAX_SAFE_INTEGER)" v-model="selectedEndpoint.settings.timeout" :min="0" style="width: 100%" />
                       <template v-else>
                         <el-input :model-value="String(selectedEndpoint._rawTimeout)" readonly />
-                        <span class="csv-hint">保留原始值；请使用 JMX 编辑器修改。</span>
+                        <span class="csv-hint">保留原始值；请切换到 JMX 树视图修改。</span>
                       </template>
                     </el-form-item>
                   </el-col>
@@ -483,6 +484,7 @@
         </template>
       </div>
     </div>
+    <JmxTreeEditor v-else ref="treeEditorRef" :plan-id="planId" class="tree-mode" />
 
     <!-- Function Helper Dialog -->
     <FunctionHelper v-model:visible="functionHelperVisible" @insert="handleFunctionInsert" />
@@ -513,6 +515,7 @@ import HeadersEditor from '@/components/editor/HeadersEditor.vue'
 import CookiesEditor from '@/components/editor/CookiesEditor.vue'
 import ResponsePanel from '@/components/editor/ResponsePanel.vue'
 import FunctionHelper from '@/components/editor/FunctionHelper.vue'
+import JmxTreeEditor from '@/components/editor/JmxTreeEditor.vue'
 import type { DebugResponse } from '@/components/editor/ResponsePanel.vue'
 import type { EndpointItem } from '@/components/editor/EndpointList.vue'
 import type { AssertionRule } from '@/components/editor/AssertionsTab.vue'
@@ -720,6 +723,34 @@ const cookieProps = computed({
     }))
   },
 })
+
+// === Form / JMX tree views ===
+// Both views edit the saved plan: switching saves the current view if it changed, and the other reloads.
+const viewMode = ref<'form' | 'tree'>('form')
+const switchingView = ref(false)
+const treeEditorRef = ref<InstanceType<typeof JmxTreeEditor> | null>(null)
+const viewModeOptions = computed(() => [
+  { label: t('editor.view.form'), value: 'form' },
+  { label: t('editor.view.tree'), value: 'tree' },
+])
+
+async function switchView(mode: string | number | boolean) {
+  if (mode === viewMode.value) return
+  switchingView.value = true
+  try {
+    if (mode === 'tree') {
+      const unchanged = JSON.stringify(buildTreeFromEndpoints()) === JSON.stringify(treeData.value)
+      if (unchanged || await handleSave()) viewMode.value = 'tree'
+    } else {
+      const tree = treeEditorRef.value
+      if (tree && tree.isDirty() && !await tree.handleSave()) return
+      await loadPlan()
+      viewMode.value = 'form'
+    }
+  } finally {
+    switchingView.value = false
+  }
+}
 
 // === Lifecycle ===
 onMounted(async () => {
@@ -1521,10 +1552,7 @@ async function handleSave() {
   saving.value = true
   try {
     const tree = buildTreeFromEndpoints()
-    await api.saveTestPlanTree(planId.value, {
-      tree,
-      name: planName.value,
-    })
+    await api.saveTestPlanTree(planId.value, { tree })
     // Refresh local state
     treeData.value = tree
     ElMessage.success(t('editor.message.saveSuccess'))
@@ -1563,15 +1591,15 @@ async function handleViewSource() {
 
 function goBack() {
   if (projectId.value) {
-    router.push(`/test-plans?projectId=${projectId.value}`)
+    router.push(`/projects/${projectId.value}/plans`)
   } else {
-    router.push('/test-plans')
+    router.push('/projects')
   }
 }
 
 function goToProjectSettings() {
   if (projectId.value) {
-    router.push(`/projects/${projectId.value}/settings`)
+    router.push(`/projects/${projectId.value}/settings?section=environments`)
   }
 }
 </script>
