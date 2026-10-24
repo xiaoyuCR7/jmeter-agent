@@ -1,54 +1,55 @@
 # JMeter Agent
 
-AI-Powered JMeter Performance Testing Platform - Supports multiple AI models, automated test plan generation, and intelligent report analysis
+A local, requirement-driven AI agent for JMeter performance testing
 
 ## Project Overview
 
-JMeter Agent is an AI-integrated performance testing platform built on Apache JMeter 5.6.3. The JMeter runtime is **not bundled in this repository** — you need to install it separately (see [Installation Guide](#installation-guide)) before running real load tests. The platform aims to simplify the performance testing workflow by leveraging AI technologies to automatically generate test plans, intelligently analyze test results, and provide natural language interaction capabilities.
+JMeter Agent is a locally deployed, single-user, **requirement-driven** performance testing agent built on Apache JMeter 5.6.3. The JMeter runtime is **not bundled in this repository**; install it separately (see [Installation Guide](#installation-guide)) before running real load tests.
+
+It closes the loop of AI-assisted performance testing:
+
+1. **Test document → requirements**: AI extracts quantifiable requirements (TPS, P90/P95/P99, error rate, concurrency, duration) as a reviewable draft. Every item quotes its source sentence, and the quote is checked against the document.
+2. **Requirements → test plan**: the documented load profile prefills new plans; AI generates and validates the JMX.
+3. **Run → deterministic evidence**: every run gets per-requirement verdicts, a comparison with the baseline and the previous run (overall and per transaction), and Prometheus server metrics for the run window (saturation, correlation with response time).
+4. **Evidence → AI analysis**: conclusions must cite requirement IDs and measured values; anything unsupported is marked as a hypothesis with a way to verify it.
+
+The same evidence is exposed over MCP, so Claude Code, Cursor and similar assistants see exactly what the report page shows.
 
 ---
 
 ## Features
 
-### Test Plan Management
+### Performance requirements
 
-- AI automated test plan generation (supports OpenAPI document import)
-- JMX file visual editor
-- Multiple test templates: Baseline, Concurrency, Ramp-up, Stress, Stability, Spike
-- Test plan version management and backup
+- Paste a document or load a .txt / .md file; AI drafts requirements and flags quotes it could not find in the text
+- Overall and per-transaction requirements (matched by sampler label; the worst matching label decides)
+- The load profile carries over into new test plans
 
-### Test Execution
+### Test plans and execution
 
-- Background asynchronous test execution
-- Real-time progress monitoring (WebSocket)
-- Support for cancelling running tests
-- Distributed testing support
+- AI test plan generation (natural language or OpenAPI import) and a visual JMX tree editor
+- Templates: baseline, concurrency, ramp-up, stress, stability, spike
+- Background execution with WebSocket progress and cancellation; concurrent JMeter runs are capped so they do not skew each other
+- SelfHeal repairs extraction rules broken by API changes (with confirmation)
 
-### AI Analysis Capabilities
+### Evidence and analysis
 
-- Intelligent report analysis: automatically identify performance issues, resource bottlenecks, error root causes
-- Anomaly detection and metric correlation analysis
-- Cost estimation and performance drift detection
-- Cross-version comparison analysis
+- "Verdict & evidence" panel on every report: requirement table, history comparison, server metrics plotted against response time
+- Streaming JTL parser with exact percentiles and memory independent of sample count
+- One-click "set as baseline"; baselines keep a metrics snapshot
+- Prometheus presets for host, JVM + HikariCP and MySQL; collected per run window and cached
+- Fact-sheet-driven AI analysis with number validation, a hypothesis ledger and a RAG knowledge base
 
-### Natural Language Interaction
+### MCP
 
-- AI chat assistant: supports querying test data, analyzing reports, answering JMeter questions
-- AI workflow: automatically create projects and test cases from API documents
-- Auto-tune: intelligently optimize test configurations
+- Streamable HTTP (`/api/v1/mcp`, recommended) and legacy SSE (`/api/v1/mcp/sse`)
+- Evidence tools such as `get_execution_evidence`, `extract_performance_requirements`, `save_performance_requirements`, `promote_execution_to_baseline`; writes require confirmation in the UI
+- Prompts: `requirements-to-plan`, `analyze-execution`
 
-### Project & Environment Management
+### Local single-user mode
 
-- Multi-project support
-- Multi-environment configuration (development, testing, production)
-- Environment variables and header management
-- Chinese/English interface switching
-
-### Scheduling & Baselines
-
-- Scheduled test task scheduling
-- Performance baseline management
-- Automatic test result comparison
+- No login or accounts; the server only binds to loopback addresses
+- Host and Origin checks still stop other websites in your browser from calling the local API
 
 ---
 
@@ -187,9 +188,6 @@ OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
 QWEN_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 
-# JWT secret (must be changed in production)
-JWT_SECRET=your-secure-jwt-secret
-DEFAULT_ADMIN_PASSWORD=your-admin-password
 ```
 
 **5. Start Services**
@@ -216,7 +214,7 @@ npm run dev
 
 ### No Login Required
 
-This project is meant for private local deployment, so there is no login: requests without credentials run as the default admin (`DEFAULT_ADMIN_USERNAME`, `admin` by default). CLI/MCP clients may still send `Authorization: Bearer <token>`, which is validated as before. Bind only to a loopback address such as `127.0.0.1`; do not expose it publicly.
+This project is meant for private local deployment: there is no login or account system. The server refuses to bind to anything but a loopback address such as `127.0.0.1`; do not expose it publicly.
 
 ### Create Test Plan
 
@@ -262,17 +260,12 @@ This project is meant for private local deployment, so there is no login: reques
 |----------|-------------|---------|
 | `PORT` | Backend service port | 8000 |
 | `DEBUG` | Debug mode | true |
-| `JWT_SECRET` | JWT signing secret | change-me-in-production |
-| `JWT_EXPIRE_MINUTES` | Access Token expiration time | 60 |
-| `DEFAULT_ADMIN_USERNAME` | Default admin username | admin |
-| `DEFAULT_ADMIN_PASSWORD` | Default admin password | admin123 |
 | `DEEPSEEK_API_KEY` | DeepSeek API key | - |
 | `OPENAI_API_KEY` | OpenAI API key | - |
 | `ANTHROPIC_API_KEY` | Anthropic API key | - |
 | `QWEN_API_KEY` | Qwen API key | - |
 | `JMETER_HOME` | Directory containing the JMeter executable (its `bin` dir or the JMeter install root) | `<project-root>/bin` |
 | `MEMORY_PERSIST_ENABLED` | Conversation memory persistence | true |
-| `RATE_LIMIT_ENABLED` | API rate limiting | true |
 | `RESOURCE_CPU_THRESHOLD` | CPU usage threshold (%) | 80 |
 | `RESOURCE_MEMORY_THRESHOLD` | Memory usage threshold (%) | 85 |
 
@@ -308,6 +301,12 @@ The system automatically creates the following directories:
 | GET | `/api/v1/projects` | Get project list |
 | POST | `/api/v1/projects` | Create project |
 | GET | `/api/v1/ai/models` | Get AI model list |
+| GET/PUT | `/api/v1/projects/{id}/requirements` | Read / save performance requirements |
+| POST | `/api/v1/projects/{id}/requirements/extract` | AI requirement draft from document text |
+| GET/PUT | `/api/v1/projects/{id}/monitoring` | Prometheus configuration |
+| GET | `/api/v1/executions/{id}/evidence` | Requirement verdicts, history comparison, server metrics |
+| POST | `/api/v1/executions/{id}/promote-baseline` | Set a run as the baseline |
+| POST | `/api/v1/mcp` | MCP Streamable HTTP endpoint |
 
 Full API documentation: http://localhost:8000/api/docs
 

@@ -25,67 +25,52 @@ AI 驱动的 JMeter 性能测试平台 —— 支持多 AI 模型、自动生成
 
 ## 项目概述
 
-JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 Apache JMeter 5.6.3 构建。JMeter 运行时**不包含在仓库内**，执行真实压测前需自行准备（安装方式见[安装指南](#安装指南)）。平台通过 AI 技术自动生成测试计划、智能分析测试结果，并提供自然语言交互、MCP 协议集成等能力，旨在大幅简化性能测试流程。
+JMeter Agent 是一个本地部署、单人使用的 **需求驱动** 性能测试智能体，基于 Apache JMeter 5.6.3 构建。JMeter 运行时**不包含在仓库内**，执行真实压测前需自行准备（安装方式见[安装指南](#安装指南)）。
+
+它把 AI 接入性能测试的完整闭环：
+
+1. **测试文档 → 性能需求**：AI 从需求说明 / 测试方案中抽取可量化的需求（TPS、P90/P95/P99、错误率、并发、时长），每条都附文档原文并自动核对，人工确认后保存。
+2. **需求 → 测试计划**：按需求中的负载模型预填并发与时长，AI 生成并校验 JMX。
+3. **执行 → 确定性证据**：每次压测自动产出三类证据：逐条需求达标判定、与基线及上一次执行的对比（整体 + 接口级）、Prometheus 服务端指标（饱和度、与响应时间的相关性）。
+4. **证据 → AI 分析**：AI 只能基于上述证据下结论，必须引用需求编号与具体指标；证据不足时以【假设】形式给出并说明验证方法。
+
+所有证据同时通过 MCP 暴露，Claude Code、Cursor 等外部 AI 助手拿到的是与报告页面完全相同的数据。
 
 ---
 
 ## 功能特性
 
-### 测试计划管理
+### 性能需求（闭环起点）
 
-- AI 自动生成测试计划（支持自然语言描述与 OpenAPI 文档导入）
-- JMX 文件可视化树形编辑器（组件注册表 + 函数注册表）
-- 多种测试模板：基准测试、高并发测试、阶梯加压、压力测试、稳定性测试、尖峰测试
-- 测试计划版本管理与自动备份
+- 粘贴文档或读取 .txt / .md 文件，AI 生成需求草稿；原文未在文档中找到的条目会标记"待核对"
+- 支持整体与接口级需求（按采样器名称匹配，取最差接口判定）
+- 负载模型（并发、加压、时长、目标 TPS）自动带入新建测试计划
 
-### 测试执行
+### 测试计划与执行
 
-- 后台异步执行测试
-- 实时进度监控（WebSocket 推送）
-- 支持取消正在运行的测试
-- 资源保护：CPU / 内存阈值监控，超阈值自动排队等待，限制最大并发测试数
-- 分布式测试执行器支持
-- SLA 校验引擎与回归检测引擎
+- AI 生成测试计划（自然语言描述 / OpenAPI 导入），JMX 可视化树形编辑器
+- 多种测试模板：基准、高并发、阶梯加压、压力、稳定性、尖峰
+- 后台执行与 WebSocket 实时进度，可取消；同时运行的 JMeter 数量受限，避免互相干扰
+- SelfHeal：接口变化导致提取规则失效时自动定位并修复（需确认）
 
-### AI 分析能力
+### 证据与分析
 
-- 智能报告分析：自动识别性能问题、资源瓶颈、错误根因
-- 异常检测与指标关联分析（ML 分析引擎）
-- 成本估算与性能漂移检测
-- 跨版本对比分析（基线对比）
-- 分析报告导出下载
+- 报告页"判定与证据"面板：需求达标表、历史对比、服务端指标与响应时间叠加曲线
+- JTL 流式解析：精确分位数、内存占用与样本数无关
+- 基线：报告页一键"设为基线"，基线保存指标快照，删除原执行也不受影响
+- Prometheus：内置主机 / JVM + HikariCP / MySQL 指标预设，按测试时间窗采集并缓存
+- AI 分析：事实表 + 证据驱动，数字校验、假设台账与历史知识库（RAG）
 
-### AI 对话与 Agent
+### MCP 集成
 
-- AI 对话助手：查询测试数据、分析报告、解答 JMeter 问题（支持对话记忆持久化）
-- AI 工作流：从 API 文档自动创建项目和测试用例（SSE 流式输出）
-- 自动调优（AutoTune）：智能优化测试配置参数
-- RAG 知识库：基于 LanceDB 向量数据库，支持文档检索、历史归档、模块对比
+- Streamable HTTP（`/api/v1/mcp`，推荐）与旧版 SSE（`/api/v1/mcp/sse`）
+- 证据工具：`get_execution_evidence`、`extract_performance_requirements`、`save_performance_requirements`、`promote_execution_to_baseline` 等；写操作需在界面确认
+- 提示词：`requirements-to-plan`、`analyze-execution`
 
-### 项目与环境管理
+### 本地单人模式
 
-- 多项目支持
-- 多环境配置（开发、测试、生产）
-- 环境变量和 Header 管理，支持激活环境切换
-- 测试数据文件上传与预览
-- 界面支持中英文切换
-
-### 定时任务与基线
-
-- 定时测试任务调度（支持启用 / 停用切换）
-- 性能基线管理
-- 自动对比测试结果与基线
-
-### 用户与权限
-
-- JWT 认证（Access Token + Refresh Token）
-- 多用户管理与角色控制
-- 登录接口独立限流
-
-### MCP 协议集成
-
-- 内置 MCP Server（SSE + 消息端点）
-- 支持 Trae IDE、Codex 等 AI 工具直接调用平台能力
+- 无登录、无账号体系；服务只允许监听本机回环地址
+- 仍校验 Host 与 Origin，防止浏览器中的其它网站调用本地接口
 
 ---
 
@@ -96,7 +81,6 @@ JMeter Agent 是一个集成了人工智能能力的性能测试平台，基于 
 | 后端 | Python 3.11+ / FastAPI / Uvicorn / SQLAlchemy 2.0 (async) / SQLite (aiosqlite) |
 | AI 接入 | openai SDK / anthropic SDK / 自定义 OpenAI 兼容适配器 |
 | 向量检索 | LanceDB（RAG 知识库） |
-| 认证 | JWT (PyJWT) + bcrypt (passlib) |
 | 前端 | Vue 3 / TypeScript / Vite 6 / Element Plus / Pinia / Vue Router / ECharts 6 |
 | 测试引擎 | Apache JMeter 5.6.3（需自行安装，见[安装指南](#安装指南)） |
 | 测试 | pytest（后端） / Vitest（前端） |
@@ -111,7 +95,7 @@ jmeter-agent/
 │   ├── app/
 │   │   ├── api/                  # API 路由（认证、测试计划/执行、AI、RAG、系统、MCP）
 │   │   ├── core/                 # 配置、i18n、通用工具
-│   │   ├── middleware/           # 限流与并发控制
+│   │   ├── middleware/           # 本地模式 Host / Origin 校验
 │   │   ├── models/               # 数据库模型与 Pydantic 模式
 │   │   └── services/
 │   │       ├── ai/               # 模型适配、Agent、RAG、报告分析
@@ -233,10 +217,6 @@ DEEPSEEK_MODEL=deepseek-chat
 OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
 ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxx
 QWEN_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxx
-
-# 生产环境务必修改
-JWT_SECRET=your-secure-jwt-secret
-DEFAULT_ADMIN_PASSWORD=your-admin-password
 ```
 
 **5. 启动服务**
@@ -263,7 +243,7 @@ npm run dev
 
 ### 免登录访问
 
-本项目面向本地私人部署，无需登录：未携带凭证的请求自动以默认管理员（`DEFAULT_ADMIN_USERNAME`，默认 `admin`）身份执行。CLI/MCP 客户端仍可携带 `Authorization: Bearer <token>`，此时按该令牌校验。请只绑定在 `127.0.0.1` 等回环地址上，不要暴露到公网。
+本项目面向本地私人部署，没有登录与账号体系，打开页面即可使用。服务只允许监听 `127.0.0.1` 等回环地址，不要通过端口转发暴露到公网。
 
 ### 创建测试计划
 
@@ -296,11 +276,10 @@ npm run dev
 1. 点击左侧导航"AI 对话"
 2. 支持：询问测试相关问题、查询测试数据、获取性能优化建议
 3. 通过"AI 工作流"从 API 文档一键创建项目 + 测试用例
-4. 通过"自动调优"让 AI 优化测试配置
 
 ### MCP 集成
 
-在 Trae / Codex 等支持 MCP 的工具中配置连接本平台的 MCP Server（端点见 API 接口表），即可让外部 AI 工具直接调用平台的测试执行、报告查询等能力。
+推荐使用 Streamable HTTP 端点 `http://127.0.0.1:8000/api/v1/mcp`，例如 Claude Code：`claude mcp add --transport http jmeter-agent http://127.0.0.1:8000/api/v1/mcp`；其它客户端的配置可在页面「MCP 连接」中一键复制。分析时让助手使用 `analyze-execution` 提示词或先调用 `get_execution_evidence`，它拿到的需求判定、基线对比和服务端指标与报告页一致。
 
 ---
 
@@ -308,15 +287,13 @@ npm run dev
 
 ### 环境变量
 
-常用配置如下（**生产环境务必修改** `JWT_SECRET` 与默认管理员密码；服务绑定非本机地址时同样必须修改）：
+常用配置如下（服务无登录，只能绑定本机回环地址，`HOST` 设为其它地址会拒绝启动）：
 
 | 变量名 | 说明 | 默认值 |
 |--------|------|--------|
 | `HOST` / `PORT` | 后端监听地址与端口 | `127.0.0.1` / `8000` |
 | `DEBUG` | 调试模式 | `true` |
 | `DATABASE_URL` | 数据库连接 | `sqlite+aiosqlite:///./jmeter_agent.db` |
-| `JWT_SECRET` | JWT 签名密钥（生产必改） | `change-me-in-production-use-env-var` |
-| `DEFAULT_ADMIN_USERNAME` / `DEFAULT_ADMIN_PASSWORD` | 默认管理员账号与密码 | `admin` / `admin123` |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `QWEN_API_KEY` / `DEEPSEEK_API_KEY` | 各模型 API Key（至少配置一个），配套 `*_API_BASE`、`*_MODEL` 可选 | - |
 | `DEFAULT_AI_MODEL` | 默认 AI 模型 | `openai` |
 | `JMETER_HOME` | JMeter 可执行文件目录（`bin` 或安装根目录均可） | `<项目根>/bin` |
@@ -324,7 +301,7 @@ npm run dev
 | `RESOURCE_CPU_THRESHOLD` / `RESOURCE_MEMORY_THRESHOLD` | 触发排队的 CPU / 内存阈值（%） | `80` / `85` |
 | `RESOURCE_MAX_CONCURRENT_TESTS` | 最大并发测试数 | `2` |
 
-> Token 有效期、限流（`RATE_LIMIT_*`）、Agent 并发与超时、对话记忆开关等完整配置见 [.env.example](jmeter-agent-backend/.env.example)。AI 模型也可以在系统"设置"页面通过界面管理（存储于运行时生成的 `ai_models_config.json`）。
+> Agent 并发与超时、对话记忆开关等完整配置见 [.env.example](jmeter-agent-backend/.env.example)。AI 模型也可以在系统"设置"页面通过界面管理（存储于运行时生成的 `ai_models_config.json`）。
 
 ### JMeter JVM 配置
 
@@ -346,16 +323,16 @@ JMETER_GC_OPTS=-XX:+UseG1GC -XX:MaxGCPauseMillis=100
 
 ## API 接口
 
-所有接口统一前缀 `/api/v1`（MCP SSE 除外），需认证的接口通过 `Authorization: Bearer <token>` 访问。
+所有接口统一前缀 `/api/v1`，无需认证（仅限本机访问）。
 
 | 模块 | 代表端点 | 能力 |
 |------|----------|------|
-| 认证与用户 | `/auth/login`、`/auth/refresh`、`/auth/users` | JWT 登录刷新、用户与角色管理 |
 | 测试计划 | `/test-plans`、`/test-plans/generate`、`/test-plans/{id}/jmx/*` | AI 生成、JMX 组件树编辑、原文查看与下载 |
 | 测试执行 | `/test-plans/{id}/execute`、`/executions/{id}`（`cancel`、`report`、`html-report`、`dashboard-data`、`log`） | 异步执行、取消、实时进度、报告与日志 |
 | 项目与环境 | `/projects`、`/projects/{id}/environments` | 多项目、多环境与激活环境切换 |
-| AI 与 Agent | `/ai/models`、`/ai/workflow/stream`、`/agent/run`、`/agent/autotune`、`/openapi/import` | 模型配置与连通性测试、Agent、自动调优、OpenAPI 导入 |
-| 分析 / RAG / 基线 / 调度 | `/analysis/reports`、`/rag/*`、`/baselines`、`/schedules`、`/data/*` | 报告分析下载、知识库检索、基线对比、定时任务、数据文件 |
+| AI 与 Agent | `/ai/models`、`/ai/workflow/stream`、`/agent/run`、`/openapi/import` | 模型配置与连通性测试、Agent、OpenAPI 导入 |
+| 需求 / 证据 / 监控 | `/projects/{id}/requirements`、`/projects/{id}/monitoring`、`/executions/{id}/evidence`、`/executions/{id}/promote-baseline` | 需求提取与保存、Prometheus 配置、执行证据、设为基线 |
+| 分析 / RAG / 基线 | `/analysis/reports`、`/rag/*`、`/baselines`、`/data/*` | 报告分析下载、知识库检索、基线管理、数据文件 |
 | 系统与 MCP | `/system/*`、`/jmeter/components`、`/jmeter/functions`、`/mcp/sse`、`/mcp/messages` | 系统状态与资源、JMeter 注册表、MCP 接入 |
 
 完整的请求 / 响应 schema 与在线调试见交互式文档：http://localhost:8000/api/docs

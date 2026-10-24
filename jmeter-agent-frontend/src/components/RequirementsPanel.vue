@@ -30,7 +30,7 @@
           <span>{{ L('性能需求', 'Performance requirements') }}
             <el-tag v-if="dirty" type="warning" size="small" class="dirty">{{ L('未保存', 'Unsaved') }}</el-tag>
           </span>
-          <span class="hint" v-if="draft.updated_at && !dirty">{{ L('保存于', 'Saved') }} {{ draft.updated_at }}</span>
+          <span class="hint" v-if="draft.updated_at && !dirty">{{ L('保存于', 'Saved') }} {{ draft.updated_at.replace('T', ' ') }}</span>
         </div>
       </template>
 
@@ -278,4 +278,7 @@ h4 { margin: 20px 0 10px; font-size: 14px; }
 .assumptions { margin-top: 16px; ul { margin: 6px 0 0; padding-left: 18px; } }
 .save-actions { margin-top: 20px; display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 768px) { .model-select { margin-left: 0; width: 100%; } }
+// Dense editable tables: the app's glass input border is too faint on white cards.
+:deep(.el-input__wrapper), :deep(.el-textarea__inner) { box-shadow: 0 0 0 1px var(--tavily-border-blue) inset !important; }
+:deep(.el-input__wrapper.is-focus), :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 2px var(--tavily-primary) inset !important; }
 </style>

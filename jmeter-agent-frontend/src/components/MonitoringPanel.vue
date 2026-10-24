@@ -161,4 +161,7 @@ async function remove() {
 .num { width: 100%; }
 .add { margin-top: 8px; }
 .actions { margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; }
+// Dense editable tables: the app's glass input border is too faint on white cards.
+:deep(.el-input__wrapper), :deep(.el-textarea__inner) { box-shadow: 0 0 0 1px var(--tavily-border-blue) inset !important; }
+:deep(.el-input__wrapper.is-focus), :deep(.el-textarea__inner:focus) { box-shadow: 0 0 0 2px var(--tavily-primary) inset !important; }
 </style>
