@@ -82,6 +82,10 @@ class MCPSession:
     route_generation: Optional[str] = None
 
 
+# Newest first; an unknown client version gets the newest one we speak.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-06-18", "2025-03-26", "2024-11-05")
+
+
 class MCPTransportError(Exception):
     def __init__(self, status_code: int, detail: str):
         self.status_code = status_code
@@ -138,7 +142,7 @@ class MCPServer:
         )
 
     def register_all_agent_tools(self):
-        """Import and register all 31 built-in agent tools as MCP tools."""
+        """Register every built-in agent tool as an MCP tool."""
         from app.services.ai.agent.tools import get_all_builtin_tools
         tools = get_all_builtin_tools()
         for tool in tools:
@@ -186,11 +190,18 @@ class MCPServer:
             ],
         )
         self.register_prompt(
-            "analyze-report",
-            "Analyze a JMeter test report and provide recommendations",
+            "requirements-to-plan",
+            "Turn a test document into reviewed performance requirements and a matching test plan",
             [
-                {"name": "jtl_path", "description": "Path to the JTL result file", "required": True},
-                {"name": "compare_baseline", "description": "Whether to compare against baseline", "required": False},
+                {"name": "project_id", "description": "Target project", "required": True},
+                {"name": "document", "description": "Requirement / test plan document text", "required": True},
+            ],
+        )
+        self.register_prompt(
+            "analyze-execution",
+            "Evidence-based analysis of a finished run against requirements, baseline and server metrics",
+            [
+                {"name": "execution_id", "description": "Finished execution to analyse", "required": True},
             ],
         )
     # ── JSON-RPC Request Handling ────────────────────────
@@ -214,7 +225,7 @@ class MCPServer:
         return body, None
 
     async def handle_request(self, raw_body: str) -> Optional[dict]:
-        """Internal single-message dispatcher; HTTP clients must use an SSE session."""
+        """Dispatch one JSON-RPC message (Streamable HTTP, and the internal path for tests)."""
         body, error = self._parse_request(raw_body)
         if body is None:
             return error
@@ -349,8 +360,9 @@ class MCPServer:
                 or not isinstance(client_info.get("version"), str)):
             raise MCPError(-32602, "Invalid initialize params")
 
+        requested = params["protocolVersion"]
         return {
-            "protocolVersion": "2024-11-05",
+            "protocolVersion": requested if requested in SUPPORTED_PROTOCOL_VERSIONS else SUPPORTED_PROTOCOL_VERSIONS[0],
             "serverInfo": {
                 "name": self.name,
                 "version": self.version,
@@ -361,10 +373,11 @@ class MCPServer:
                 "prompts": {"listChanged": False},
             },
             "instructions": (
-                "JMeter Agent MCP Server — AI-driven performance testing.\n"
-                "Use tools to create test plans, execute tests, analyze results.\n"
-                "Use resources to browse projects, test plans, executions, baselines.\n"
-                "Use prompts for common workflows like report analysis."
+                "JMeter Agent MCP Server: requirement-driven performance testing.\n"
+                "Workflow: extract/save performance requirements from a test document, generate and validate a "
+                "JMeter plan from them, execute it, then call get_execution_evidence before analysing: it returns "
+                "per-requirement verdicts, baseline/previous-run comparison and Prometheus server metrics.\n"
+                "Never invent numbers that are not in the evidence."
             ),
         }
 
@@ -507,13 +520,22 @@ class MCPServer:
                 f"API文档:\n{api_doc}\n\n"
                 f"请：1) 提取接口 2) 创建项目 3) 生成测试计划 4) 检查资源 5) 执行测试 6) 分析结果"
             )
-        elif name == "analyze-report":
-            jtl = arguments.get("jtl_path", "")
-            compare = arguments.get("compare_baseline", "false")
+        elif name == "requirements-to-plan":
             text = (
-                f"请分析这个 JMeter 测试报告: {jtl}\n"
-                f"与基线对比: {compare}\n"
-                f"请给出：整体评估、瓶颈分析、优化建议、SLA判定"
+                f"项目: {arguments.get('project_id', '')}\n\n"
+                "1) 调用 extract_performance_requirements 从下面文档提取性能需求草稿；"
+                "逐条核对 source_verified=false 的条目并向我确认，再调用 save_performance_requirements 保存。\n"
+                "2) 按需求中的 load_profile（并发、加压、时长、目标 TPS）和涉及的接口生成测试计划，并用 validate_jmx 校验。\n"
+                "3) 列出无法从文档确定、需要我补充的信息。\n\n"
+                f"文档：\n{arguments.get('document', '')}"
+            )
+        elif name == "analyze-execution":
+            text = (
+                f"请分析执行 {arguments.get('execution_id', '')}：\n"
+                "1) 先调用 get_execution_evidence 获取需求判定、基线/上次对比和服务端指标；必要时调用 parse_jtl_report 查看接口明细。\n"
+                "2) 结论逐条引用需求编号（如 R1）说明是否达标；所有数字必须来自证据。\n"
+                "3) 对不达标或退化项，结合服务端指标给出根因；证据不足时标注为【假设】并说明验证方法。\n"
+                "4) 给出按优先级排序的优化建议。"
             )
         else:
             text = f"Prompt: {name}"

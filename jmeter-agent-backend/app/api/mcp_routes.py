@@ -1,18 +1,20 @@
-"""MCP 2024-11-05 HTTP+SSE transport, not Streamable HTTP.
+"""MCP transports.
 
-GET /mcp/sse advertises an owner-bound POST URI. POST acknowledges with 202;
-JSON-RPC responses are delivered exclusively as that connection's SSE messages.
+POST /mcp is Streamable HTTP (JSON responses, no server-initiated stream), for
+current clients such as Claude Code, Cursor and VS Code. The legacy 2024-11-05
+HTTP+SSE transport stays available: GET /mcp/sse advertises a POST URI and
+replies arrive only on that SSE connection.
 """
 
 import json
 import asyncio
 import logging
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 import anyio
 from fastapi.responses import StreamingResponse
 
-from app.services.mcp_server import mcp_server, MCPTransportError
+from app.services.mcp_server import mcp_server, MCPTransportError, SUPPORTED_PROTOCOL_VERSIONS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["mcp"])
@@ -54,8 +56,8 @@ async def mcp_status():
     return {
         "server_name": mcp_server.name,
         "server_version": mcp_server.version,
-        "protocol_version": "2024-11-05",
-        "transport": "sse",
+        "protocol_versions": list(SUPPORTED_PROTOCOL_VERSIONS),
+        "transports": ["streamable-http", "sse"],
         "tools_count": len(mcp_server._tools),
         "resources_count": len(mcp_server._resources),
         "prompts_count": len(mcp_server._prompts),
@@ -72,11 +74,32 @@ async def mcp_status():
             for p in mcp_server._prompts.values()
         ],
         "endpoints": {
+            "streamable_http": "/api/v1/mcp",
             "messages": "/api/v1/mcp/messages",
             "sse": "/api/v1/mcp/sse",
             "status": "/api/v1/mcp/status",
         },
     }
+
+
+@router.post("/mcp")
+async def mcp_streamable_http(request: Request):
+    """Streamable HTTP: one JSON-RPC message in, one JSON response out (202 for notifications)."""
+    body = bytearray()
+    async for chunk in request.stream():
+        body.extend(chunk)
+        if len(body) > 1024 * 1024:
+            raise HTTPException(413, "MCP message exceeds 1 MiB")
+    response = await mcp_server.handle_request(bytes(body))
+    if response is None:
+        return Response(status_code=202)
+    return JSONResponse(response)
+
+
+@router.get("/mcp")
+async def mcp_streamable_http_stream():
+    # No server-initiated messages: the spec lets servers decline the GET stream.
+    return Response(status_code=405, headers={"Allow": "POST"})
 
 
 @router.post("/mcp/messages")

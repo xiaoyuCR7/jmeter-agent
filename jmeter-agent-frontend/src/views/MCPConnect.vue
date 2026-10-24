@@ -32,10 +32,10 @@
 
     <!-- Connection Config -->
     <el-card class="config-card">
-      <template #header><span><el-icon class="header-icon"><Connection /></el-icon> {{ t('mcpConnect.config') }}</span><el-tag size="small" type="success" style="margin-left:8px">MCP 2024-11-05</el-tag></template>
+      <template #header><span><el-icon class="header-icon"><Connection /></el-icon> {{ t('mcpConnect.config') }}</span><el-tag size="small" type="success" style="margin-left:8px">Streamable HTTP</el-tag></template>
 
       <el-alert type="info" :closable="false" style="margin-bottom:16px">
-        <template #title>{{ currentLang === 'en' ? 'Legacy HTTP+SSE (2024-11-05); the client must support SSE. Local no-login mode: no access token is needed, and the server only listens on this machine.' : '旧版 HTTP+SSE（2024-11-05），客户端须支持 SSE。本地免登录模式：无需访问令牌，服务仅监听本机。' }}</template>
+        <template #title>{{ currentLang === 'en' ? 'Streamable HTTP endpoint for current clients; older SSE-only clients can use /api/v1/mcp/sse. No access token is needed: the server only listens on this machine. Start with the analyze-execution prompt or the get_execution_evidence tool.' : 'Streamable HTTP 端点，适用于当前主流客户端；只支持 SSE 的旧客户端可用 /api/v1/mcp/sse。无需访问令牌，服务仅监听本机。分析时可直接使用 analyze-execution 提示词或 get_execution_evidence 工具。' }}</template>
       </el-alert>
 
       <!-- AI Tool Tabs -->
@@ -43,7 +43,12 @@
         <!-- Claude Code -->
         <el-tab-pane :label="t('mcpConnect.tools.claude')" name="claude">
           <div class="tab-content">
-            <p>{{ currentLang === 'en' ? 'Add this configuration to .mcp.json in the project root:' : '在项目根目录的 .mcp.json 中添加以下配置：' }}</p>
+            <p>{{ currentLang === 'en' ? 'Run once in a terminal:' : '在终端执行一次：' }}</p>
+            <div class="code-block">
+              <div class="code-header"><span>CLI</span><el-button class="copy-btn" text size="small" @click="copyConfig('claude-cli')"><el-icon><CopyDocument/></el-icon> {{ t('mcpConnect.copy') }}</el-button></div>
+<pre><code>{{ getConfig('claude-cli') }}</code></pre>
+            </div>
+            <p>{{ currentLang === 'en' ? 'Or add this configuration to .mcp.json in the project root:' : '或在项目根目录的 .mcp.json 中添加以下配置：' }}</p>
             <div class="code-block">
               <div class="code-header"><span>.mcp.json</span><el-button class="copy-btn" text size="small" @click="copyConfig('claude')"><el-icon><CopyDocument/></el-icon> {{ t('mcpConnect.copy') }}</el-button></div>
 <pre><code>{{ getConfig('claude') }}</code></pre>
@@ -120,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { api } from '@/api'
 import { ElMessage } from 'element-plus'
 import { Connection, CopyDocument, Tools } from '@element-plus/icons-vue'
@@ -134,7 +139,7 @@ const testing = ref(false)
 const activeTool = ref('claude')
 
 const origin = computed(() => location.origin)
-const mcpUrl = computed(() => `${origin.value}/api/v1/mcp/sse`)
+const mcpUrl = computed(() => `${origin.value}/api/v1/mcp`)
 
 async function loadStatus() {
   try {
@@ -147,27 +152,17 @@ async function loadStatus() {
 }
 
 function getConfig(tool: string): string {
-  const base = origin.value
+  if (tool === 'claude-cli') {
+    return `claude mcp add --transport http jmeter-agent ${mcpUrl.value}`
+  }
   if (tool === 'generic') {
-    return `# Terminal 1: keep this SSE connection open.
-curl -N "${base}/api/v1/mcp/sse"
+    return `curl -s -X POST "${mcpUrl.value}" -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
 
-# Terminal 2: copy the session_id from the endpoint event above.
-SESSION_ENDPOINT="${base}/api/v1/mcp/messages?session_id=SESSION_ID_FROM_ENDPOINT"
-mcp_post() {
-  curl -f -X POST "$SESSION_ENDPOINT" -H "Content-Type: application/json" -d "$1"
-}
-mcp_post '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
-
-# Wait for initialize result in Terminal 1, then mark the client ready.
-mcp_post '{"jsonrpc":"2.0","method":"notifications/initialized"}'
-mcp_post '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
-# POST returns 202 with no body. Results appear only in Terminal 1.`
+curl -s -X POST "${mcpUrl.value}" -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'`
   }
-  const entry = {
-    ...(tool === 'cursor' ? {} : { type: 'sse' }),
-    url: mcpUrl.value,
-  }
+  const entry = { ...(tool === 'cursor' ? {} : { type: 'http' }), url: mcpUrl.value }
   return JSON.stringify({ [tool === 'vscode' ? 'servers' : 'mcpServers']: { 'jmeter-agent': entry } }, null, 2)
 }
 
@@ -196,61 +191,18 @@ async function copyUrl() {
   }
 }
 
-let stopConnectionTest: (() => void) | null = null
-
 async function testConnection() {
   testing.value = true
   try {
-    const serverInfo = await new Promise<{ name: string; version: string }>((resolve, reject) => {
-      const stream = new EventSource(mcpUrl.value, { withCredentials: true })
-      let endpoint = ''
-      let info: { name: string; version: string }
-      let settled = false
-      const finish = (error?: Error) => {
-        if (settled) return
-        settled = true
-        clearTimeout(timeout)
-        stream.close()
-        stopConnectionTest = null
-        if (error) reject(error)
-        else resolve(info)
-      }
-      const timeout = setTimeout(() => finish(new Error('MCP handshake timed out')), 15000)
-      stopConnectionTest = () => finish(new Error('MCP connection closed'))
-      stream.onerror = () => finish(new Error('MCP SSE connection failed'))
-      stream.addEventListener('endpoint', async (event: MessageEvent) => {
-        try {
-          const url = new URL(event.data, origin.value)
-          if (url.origin !== origin.value || !url.searchParams.has('session_id')) {
-            throw new Error('Invalid MCP session endpoint')
-          }
-          endpoint = url.href
-          await api.instance.post(endpoint, {
-            jsonrpc: '2.0', id: 'init', method: 'initialize',
-            params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'web-ui', version: '1.0' } },
-          })
-        } catch (error) {
-          finish(error instanceof Error ? error : new Error('MCP initialize failed'))
-        }
-      })
-      stream.addEventListener('message', async (event: MessageEvent) => {
-        try {
-          const response = JSON.parse(event.data)
-          if (response.error) throw new Error(response.error.message)
-          if (response.id === 'init' && response.result?.serverInfo) {
-            info = response.result.serverInfo
-            await api.instance.post(endpoint, { jsonrpc: '2.0', method: 'notifications/initialized' })
-            await api.instance.post(endpoint, { jsonrpc: '2.0', id: 'probe', method: 'ping' })
-          } else if (response.id === 'probe' && response.result) {
-            finish()
-          }
-        } catch (error) {
-          finish(error instanceof Error ? error : new Error('Invalid MCP response'))
-        }
-      })
+    const init = await api.instance.post('/mcp', {
+      jsonrpc: '2.0', id: 'init', method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'web-ui', version: '1.0' } },
     })
+    if (init.data.error) throw new Error(init.data.error.message)
+    const ping = await api.instance.post('/mcp', { jsonrpc: '2.0', id: 'probe', method: 'ping' })
+    if (ping.data.error) throw new Error(ping.data.error.message)
     connected.value = true
-    ElMessage.success(t('mcpConnect.message.connectionSuccess', serverInfo))
+    ElMessage.success(t('mcpConnect.message.connectionSuccess', init.data.result.serverInfo))
   } catch (error) {
     connected.value = false
     ElMessage.error(t('mcpConnect.message.connectionFailed', { message: error instanceof Error ? error.message : '' }))
@@ -259,7 +211,6 @@ async function testConnection() {
   }
 }
 
-onUnmounted(() => stopConnectionTest?.())
 onMounted(loadStatus)
 </script>
 
