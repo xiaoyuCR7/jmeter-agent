@@ -216,39 +216,40 @@ npm run dev
 
 This project is meant for private local deployment: there is no login or account system. The server refuses to bind to anything but a loopback address such as `127.0.0.1`; do not expose it publicly.
 
-### Create Test Plan
+### Layout
 
-1. Select or create a project in the left project tree
-2. Click "New Test Case"
-3. Select a test template (Baseline, Concurrency, etc.)
-4. Configure test parameters (concurrent users, duration, ramp-up time, etc.)
-5. Input API endpoint information or import OpenAPI document
-6. Click "Generate" button, AI will automatically generate the test plan
+The sidebar has three entries: **Projects**, **Runs** and **Settings**, plus a "Start from a document" button for new projects.
 
-### Execute Test
+- **Projects**: one workspace per project, with Overview (loop setup and recent runs), Requirements, Test plans, Baselines and Settings (basics, environments, server monitoring) tabs.
+- **Runs**: every run across projects in one table, filterable by project and status, showing the requirement verdict, key metrics and AI analysis status.
+- **Settings**: AI models, assistants (MCP), system paths, appearance and language.
 
-1. Select the test plan to execute from the test plan list
-2. Click "Execute" button
-3. Optional: select AI model for analysis
-4. View real-time test progress on the execution page
+### Start from a document
 
-### View Report
+1. Click "Start from a document"
+2. Upload or paste an API / requirements document and describe what to test (for example "checkout at 500 concurrent users for 10 minutes, P95 within 1 s"), or just give an OpenAPI URL (sample: `reqres-openapi.yaml`)
+3. When the project and plans are ready, click "Review requirements": your text is prefilled for extraction; check the AI draft and save it
 
-1. After test completion, click the report link
-2. View:
-   - Test overview (response time, throughput, error rate)
-   - AI analysis report (automatically identified issues and optimization suggestions)
-   - JMeter native HTML report
-   - Execution logs
+### Create and edit test plans
 
-### AI Chat
+1. On a project's Test plans tab, click "New test plan" and pick a template (baseline, concurrency, ramp-up, ...)
+2. Concurrency and duration are prefilled from the requirements load profile
+3. The editor has a form view and a JMX tree view; switching saves the current view only if it changed
 
-1. Click "AI Chat" in the left navigation bar
-2. You can:
-   - Ask test-related questions
-   - Query test data
-   - Get performance optimization suggestions
-   - Auto-create projects from API documents via "AI Workflow"
+### Execute tests
+
+1. Click "Run" on a test plan
+2. The Runs page shows live progress, logs and a cancel button
+3. Runs queue automatically when the load generator is busy; the top bar shows its CPU / memory
+
+### View reports
+
+A report starts with the requirement verdict and key metrics, then tabs:
+
+- Verdict & evidence: per-requirement results, comparison with the baseline and the previous run (with "Set as baseline"), Prometheus server metrics
+- Trends: response time, throughput and error rate over time, plus percentiles
+- Transactions and Errors
+- AI analysis (downloadable as Markdown); the header also offers the JTL file and JMeter's HTML report
 
 ---
 
