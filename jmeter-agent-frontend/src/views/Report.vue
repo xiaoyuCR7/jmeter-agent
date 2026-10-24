@@ -96,8 +96,7 @@
                   <div class="compare-metric">
                     <span class="label">{{ t('report.throughput') }}</span>
                     <span class="value">{{ compareReport.summary.throughput }} req/s</span>
-                    <!-- 吞吐量为"越高越好"指标，参数故意传反：上升 → 'good' -->
-                    <span class="change" :class="getChangeClass(compareReport.summary.throughput, report.summary.throughput)">
+                    <span class="change" :class="getChangeClass(report.summary.throughput, compareReport.summary.throughput, true)">
                       {{ getChange(report.summary.throughput, compareReport.summary.throughput) }}
                     </span>
                   </div>
@@ -623,11 +622,11 @@ const getChange = (current: number, compare: number) => {
   return `${percent > 0 ? '+' : ''}${percentStr}%`
 }
 
-const getChangeClass = (current: number, compare: number) => {
-  if (compare === 0) return ''
-  const percent = (current - compare) / compare * 100
-  if (percent > 10) return 'bad'
-  if (percent < -10) return 'good'
+const getChangeClass = (current: number, compare: number, higherIsBetter = false) => {
+  // No percentage exists against a zero baseline, but any rise from it still counts.
+  const percent = compare === 0 ? (current > 0 ? Infinity : 0) : (current - compare) / compare * 100
+  if (percent > 10) return higherIsBetter ? 'good' : 'bad'
+  if (percent < -10) return higherIsBetter ? 'bad' : 'good'
   return ''
 }
 

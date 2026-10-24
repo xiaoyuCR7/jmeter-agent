@@ -118,6 +118,21 @@ async def test_restore_failure_is_visible_and_backup_retained(plan, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_selfheal_parses_the_jtl_off_the_event_loop(plan, monkeypatch):
+    import threading
+    from app.services.jmeter.report_parser import ReportParser
+    threads = []
+    def parse(self, path):
+        threads.append(threading.current_thread())
+        return ReportParser()._empty_summary()
+    monkeypatch.setattr(ReportParser, 'parse_jtl', parse)
+    agent = SelfHealAgent()
+    monkeypatch.setattr(agent, '_llm_diagnose', AsyncMock(return_value=[]))
+    await agent.diagnose_and_fix(str(plan), 'failed', auto_re_run=False)
+    assert threads and threading.current_thread() not in threads
+
+
+@pytest.mark.asyncio
 async def test_selfheal_without_response_evidence_never_edits(plan, monkeypatch):
     agent = SelfHealAgent()
     monkeypatch.setattr(agent, '_llm_diagnose', AsyncMock(return_value=[]))

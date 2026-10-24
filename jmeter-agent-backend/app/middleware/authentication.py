@@ -5,7 +5,7 @@ from starlette.requests import HTTPConnection
 from starlette.responses import JSONResponse
 
 from app.core.config import settings
-from app.services.auth import Role, get_current_user
+from app.services.auth import Role, get_current_user, local_access_token
 from app.services.security_context import current_principal, current_access_token
 from urllib.parse import urlsplit
 
@@ -53,7 +53,7 @@ class AuthenticationMiddleware:
         try:
             if check_origin and origin and origin != same_origin and origin not in settings.CORS_ORIGINS:
                 raise HTTPException(403, 'Origin not allowed')
-            if protected and method != 'OPTIONS':
+            if (protected or path.startswith('/api/v1/auth/')) and method != 'OPTIONS':
                 authorization = connection.headers.get('authorization', '')
                 if authorization:
                     scheme, _, token = authorization.partition(' ')
@@ -61,9 +61,16 @@ class AuthenticationMiddleware:
                         raise HTTPException(401, 'Bearer authentication required')
                 else:
                     token = connection.cookies.get('jmeter_access', '')
-                if not token:
-                    raise HTTPException(401, 'Authentication required')
-                user = await get_current_user(HTTPAuthorizationCredentials(scheme='Bearer', credentials=token))
+                # No login: requests without a valid cookie act as the local admin.
+                token = token or await local_access_token()
+                try:
+                    user = await get_current_user(HTTPAuthorizationCredentials(scheme='Bearer', credentials=token))
+                except HTTPException:
+                    if authorization:
+                        raise
+                    cached = await local_access_token()
+                    token = cached if token != cached else await local_access_token(renew=True)
+                    user = await get_current_user(HTTPAuthorizationCredentials(scheme='Bearer', credentials=token))
                 required = Role.VIEWER if method in ('GET', 'HEAD', 'OPTIONS') else Role.OPERATOR
                 if path.startswith(('/api/v1/system/paths', '/api/v1/ai/model-configs', '/api/v1/ai/models/user')):
                     required = Role.ADMIN

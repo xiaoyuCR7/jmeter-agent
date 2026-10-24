@@ -1,12 +1,12 @@
 """Scheduled test management endpoints."""
 
-from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Optional
 from pydantic import BaseModel, Field
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.time import utc_now_naive
 from app.models.db import get_session_factory, ScheduleModel, SchedulePrincipalModel
 from app.services.scheduler import _next_cron_time, schedule_source
 from app.services.project_scope import current_scope, require_project
@@ -62,11 +62,12 @@ async def create_schedule(request: CreateScheduleRequest):
     if next_run is None:
         raise HTTPException(status_code=400, detail="Invalid cron expression")
 
+    test_plan_id = request.test_plan_id or None
     async with _schedule_session() as s:
-        path = await schedule_source(s, request.project_id, request.test_plan_id, request.jmx_path)
+        path = await schedule_source(s, request.project_id, test_plan_id, request.jmx_path)
         sch = ScheduleModel(
             project_id=request.project_id,
-            test_plan_id=request.test_plan_id,
+            test_plan_id=test_plan_id,
             name=request.name,
             cron_expression=request.cron_expression,
             is_enabled=request.is_enabled,
@@ -122,16 +123,23 @@ async def list_schedules(
 async def update_schedule(schedule_id: int, request: UpdateScheduleRequest):
     """Update an existing schedule (name, cron, test plan, jmx path, enabled state)."""
     current_scope()
-    payload = request.model_dump(exclude_unset=True)
+    # Only the source fields are clearable; null for the others means "unchanged".
+    payload = {
+        key: value for key, value in request.model_dump(exclude_unset=True).items()
+        if value is not None or key in ('test_plan_id', 'jmx_path')
+    }
     if not payload:
         raise HTTPException(status_code=400, detail='No fields to update')
+    if 'test_plan_id' in payload:
+        payload['test_plan_id'] = payload['test_plan_id'] or None
 
-    cron_changed = 'cron_expression' in payload
-    if cron_changed:
+    if 'cron_expression' in payload:
         try:
-            _next_cron_time(payload['cron_expression'])
+            next_run = _next_cron_time(payload['cron_expression'])
         except ValueError:
             raise HTTPException(status_code=400, detail='Invalid cron expression') from None
+        if next_run is None:
+            raise HTTPException(status_code=400, detail="Invalid cron expression")
 
     async with _schedule_session() as s:
         sch = await s.get(ScheduleModel, schedule_id)
@@ -140,26 +148,29 @@ async def update_schedule(schedule_id: int, request: UpdateScheduleRequest):
         require_project(sch.project_id, write=True)
 
         if 'test_plan_id' in payload or 'jmx_path' in payload:
-            sch.jmx_path = await schedule_source(
-                s, sch.project_id,
-                payload.get('test_plan_id', sch.test_plan_id),
-                payload.get('jmx_path', sch.jmx_path),
-            )
-            sch.test_plan_id = payload.get('test_plan_id', sch.test_plan_id)
+            plan_id = payload.get('test_plan_id', sch.test_plan_id)
+            if 'jmx_path' in payload:
+                source = payload['jmx_path'] or ''
+            else:
+                # A newly selected plan supplies its own file.
+                source = '' if plan_id and plan_id != sch.test_plan_id else sch.jmx_path
+            sch.jmx_path = await schedule_source(s, sch.project_id, plan_id, source)
+            sch.test_plan_id = plan_id
         if 'name' in payload:
             sch.name = payload['name']
-        if 'cron_expression' in payload:
+        was_enabled = sch.is_enabled
+        cron_changed = payload.get('cron_expression', sch.cron_expression) != sch.cron_expression
+        if cron_changed:
             sch.cron_expression = payload['cron_expression']
         if 'is_enabled' in payload:
             sch.is_enabled = payload['is_enabled']
 
-        enabled = payload.get('is_enabled', sch.is_enabled)
-        if enabled and (cron_changed or not sch.next_run_at):
-            sch.next_run_at = _next_cron_time(sch.cron_expression)
-        elif not enabled:
+        if not sch.is_enabled:
             sch.next_run_at = None
+        elif cron_changed or not was_enabled or not sch.next_run_at:
+            sch.next_run_at = _next_cron_time(sch.cron_expression)
 
-        sch.updated_at = datetime.utcnow()
+        sch.updated_at = utc_now_naive()
         await s.commit()
         return {
             "id": sch.id, "name": sch.name,
@@ -193,7 +204,7 @@ async def toggle_schedule(schedule_id: int):
             raise HTTPException(status_code=404, detail="Schedule not found")
         require_project(sch.project_id, write=True)
         sch.is_enabled = not sch.is_enabled
-        if sch.is_enabled and not sch.next_run_at:
-            sch.next_run_at = _next_cron_time(sch.cron_expression)
+        # Recompute on enable: a run time kept from before the pause would fire at once.
+        sch.next_run_at = _next_cron_time(sch.cron_expression) if sch.is_enabled else None
         await s.commit()
         return {"id": sch.id, "is_enabled": sch.is_enabled, "next_run_at": sch.next_run_at.isoformat() if sch.next_run_at else None}

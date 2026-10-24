@@ -8,6 +8,7 @@ Tokens:
   used only at /auth/refresh to get new access_token.
 """
 
+import asyncio
 import logging
 import secrets
 from datetime import datetime, timedelta
@@ -93,8 +94,9 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 # ── Token helpers ────────────────────────────────────────────
 
-def create_access_token(username: str, role: str, session_id: str = "") -> str:
-    expire = utc_now_naive() + timedelta(minutes=settings.JWT_EXPIRE_MINUTES)
+def create_access_token(username: str, role: str, session_id: str = "",
+                        expires_delta: Optional[timedelta] = None) -> str:
+    expire = utc_now_naive() + (expires_delta or timedelta(minutes=settings.JWT_EXPIRE_MINUTES))
     payload = {
         "sub": username,
         "role": role,
@@ -184,6 +186,35 @@ async def refresh_access_token(refresh_token: str) -> Optional[TokenResponse]:
 async def logout(refresh_token: str):
     """Revoke a refresh token."""
     await db_store.delete_refresh_token(_hash_token(refresh_token))
+
+
+# ── Local single-user mode ───────────────────────────────────
+
+_LOCAL_SESSION_TTL = timedelta(days=3650)
+_local_token: Optional[str] = None
+_local_lock = asyncio.Lock()
+
+
+async def local_access_token(renew: bool = False) -> str:
+    """Session for the default admin, used when a request carries no credentials.
+
+    Private local deployment has no login step; downstream WS/SSE/scope checks
+    still revalidate this token like any other session.
+    """
+    global _local_token
+    async with _local_lock:
+        if _local_token and not renew:
+            return _local_token
+        await ensure_default_admin()
+        user = await db_store.get_user_by_username(settings.DEFAULT_ADMIN_USERNAME)
+        session_id = _hash_token(create_refresh_token())
+        await db_store.store_refresh_token(
+            username=user.username,
+            token_hash=session_id,
+            expires_at=utc_now_naive() + _LOCAL_SESSION_TTL,
+        )
+        _local_token = create_access_token(user.username, user.role, session_id, _LOCAL_SESSION_TTL)
+        return _local_token
 
 
 # ── FastAPI dependencies ─────────────────────────────────────

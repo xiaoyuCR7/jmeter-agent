@@ -21,7 +21,7 @@
       <el-card shadow="never" class="stat-card">
         <div class="stat-icon active-icon"><el-icon size="24"><CircleCheck /></el-icon></div>
         <div class="stat-content">
-          <div class="stat-value">{{ activeBaseline ? 1 : 0 }}</div>
+          <div class="stat-value">{{ activeCount }}</div>
           <div class="stat-label">{{ t('baselines.active') }}</div>
         </div>
       </el-card>
@@ -210,7 +210,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { api } from '@/api'
 import { useI18n } from '@/composables/useI18n'
@@ -224,7 +224,7 @@ const projectTestPlans = ref<any[]>([])
 const loading = ref(false)
 const showCreateDialog = ref(false)
 const selectedProjectId = ref('')
-const activeBaseline = ref<any>(null)
+const activeCount = computed(() => baselines.value.filter(b => b.is_active).length)
 
 const form = ref({
   name: '',
@@ -252,7 +252,6 @@ const loadBaselines = async () => {
   try {
     const res = await api.getBaselines(selectedProjectId.value || undefined)
     baselines.value = res.data || []
-    activeBaseline.value = baselines.value.find((b: any) => b.is_active) || null
   } catch {
     baselines.value = []
   } finally {
@@ -275,14 +274,13 @@ const getProjectName = (projectId: string) => {
 }
 
 const isActive = (baseline: any) => {
-  return activeBaseline.value?.id === baseline.id
+  return !!baseline.is_active
 }
 
 const activateBaseline = async (baseline: any) => {
   try {
     await api.activateBaseline(baseline.id)
     ElMessage.success(t('baselines.activated'))
-    activeBaseline.value = baseline
     await loadBaselines()
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || t('general.error'))

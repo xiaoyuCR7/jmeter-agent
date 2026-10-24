@@ -214,10 +214,9 @@ npm run dev
 
 ## Usage Guide
 
-### Login
+### No Login Required
 
-- Default username: `admin`
-- Default password: `admin123` (please change after first login)
+This project is meant for private local deployment, so there is no login: requests without credentials run as the default admin (`DEFAULT_ADMIN_USERNAME`, `admin` by default). CLI/MCP clients may still send `Authorization: Bearer <token>`, which is validated as before. Bind only to a loopback address such as `127.0.0.1`; do not expose it publicly.
 
 ### Create Test Plan
 

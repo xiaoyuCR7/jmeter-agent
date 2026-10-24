@@ -103,13 +103,14 @@
       :title="editingSchedule ? t('schedules.editTitle') : t('schedules.createTitle')"
       width="500px"
       style="max-width: calc(100vw - 32px);"
+      @closed="resetForm"
     >
       <el-form :model="form" label-width="100px">
         <el-form-item :label="t('general.name')" required>
           <el-input v-model="form.name" :placeholder="t('schedules.namePlaceholder')" />
         </el-form-item>
         <el-form-item :label="t('schedules.project')" required>
-          <el-select v-model="form.project_id" :placeholder="t('schedules.selectProject')">
+          <el-select v-model="form.project_id" :disabled="!!editingSchedule" :placeholder="t('schedules.selectProject')">
             <el-option
               v-for="project in projects"
               :key="project.id"
@@ -212,7 +213,8 @@ const getProjectName = (projectId: string) => {
 
 const formatTime = (time: string) => {
   if (!time) return '-'
-  return new Date(time).toLocaleString()
+  // The API returns naive UTC timestamps; mark them so they render in local time.
+  return new Date(/(Z|[+-]\d{2}:\d{2})$/.test(time) ? time : `${time}Z`).toLocaleString()
 }
 
 const toggleSchedule = async (id: number, isEnabled: boolean) => {
@@ -236,6 +238,17 @@ const editSchedule = (schedule: any) => {
   }
   showCreateDialog.value = true
   loadProjectTestPlans(schedule.project_id)
+}
+
+const resetForm = () => {
+  editingSchedule.value = null
+  form.value = {
+    name: '',
+    project_id: '',
+    test_plan_id: '',
+    cron_expression: '',
+    is_enabled: true
+  }
 }
 
 const deleteSchedule = async (schedule: any) => {
@@ -262,20 +275,13 @@ const saveSchedule = async () => {
   try {
     if (editingSchedule.value) {
       const { project_id, ...patch } = form.value
-      await api.updateSchedule(editingSchedule.value.id, patch)
+      await api.updateSchedule(editingSchedule.value.id, { ...patch, test_plan_id: patch.test_plan_id || null })
     } else {
-      await api.createSchedule(form.value)
+      await api.createSchedule({ ...form.value, test_plan_id: form.value.test_plan_id || null })
     }
     ElMessage.success(editingSchedule.value ? t('general.success') : t('schedules.created'))
     showCreateDialog.value = false
-    editingSchedule.value = null
-    form.value = {
-      name: '',
-      project_id: '',
-      test_plan_id: '',
-      cron_expression: '',
-      is_enabled: true
-    }
+    resetForm()
     await loadSchedules()
   } catch (e: any) {
     ElMessage.error(e.response?.data?.detail || t('general.error'))

@@ -1,11 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/views/Layout.vue'
-import { api } from '@/api'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/login', name: 'Login', component: () => import('@/views/Login.vue') },
     {
       path: '/',
       component: Layout,
@@ -107,22 +105,6 @@ const router = createRouter({
       ]
     }
   ]
-})
-
-router.beforeEach(async to => {
-  if (to.name === 'Login') return true
-  try {
-    await api.getCurrentUser()
-    return true
-  } catch {
-    return { name: 'Login', query: { redirect: to.fullPath } }
-  }
-})
-
-window.addEventListener('auth-required', () => {
-  if (router.currentRoute.value.name !== 'Login') {
-    void router.replace({ name: 'Login', query: { redirect: router.currentRoute.value.fullPath } })
-  }
 })
 
 export default router

@@ -130,7 +130,7 @@ def guarded_app():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('stream', [False, True])
-@pytest.mark.parametrize('role, expected', [(None, 401), ('viewer', 403), ('operator', 404), ('admin', 404)])
+@pytest.mark.parametrize('role, expected', [(None, 404), ('viewer', 403), ('operator', 404), ('admin', 404)])
 async def test_registered_analysis_retains_operator_authorization_before_evidence_lookup(auth_db, monkeypatch, stream, role, expected):
     from unittest.mock import AsyncMock, Mock
     from app.api import routes
@@ -149,7 +149,7 @@ async def test_registered_analysis_retains_operator_authorization_before_evidenc
         response = await client.post('/api/v1/agent/run' + ('/stream' if stream else ''),
             json={'agent_type': 'analysis', 'execution_id': 'run-A', 'task': 'task'})
     assert response.status_code == expected
-    assert resolve.await_count == (1 if role in ('admin', 'operator') else 0)
+    assert resolve.await_count == (1 if role in (None, 'admin', 'operator') else 0)
     factory.assert_not_called()
 
 
@@ -197,11 +197,19 @@ def test_public_debug_binding_cannot_use_default_credentials(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_all_business_surfaces_require_authentication(auth_db):
+async def test_requests_without_credentials_act_as_local_admin(auth_db):
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=guarded_app()), base_url='http://test') as client:
-        for path in ['/api/v1/projects', '/api/v1/system/paths', '/api/v1/mcp/messages', '/reports/run/result.jtl']:
-            assert (await client.get(path)).status_code == 401
+        for path in ['/api/v1/projects', '/api/v1/system/paths', '/api/v1/mcp/messages']:
+            assert (await client.get(path)).status_code == 200
+        assert (await client.get('/api/v1/auth/me')).json()['username'] == 'admin'
         assert (await client.get('/health')).status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_explicit_invalid_bearer_token_is_still_rejected(auth_db):
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=guarded_app()), base_url='http://test',
+                                headers={'Authorization': 'Bearer not-a-token'}) as client:
+        assert (await client.get('/api/v1/projects')).status_code == 401
 
 
 @pytest.mark.asyncio
@@ -234,7 +242,8 @@ async def test_cookie_login_supports_reports_and_blocks_cross_origin_writes(auth
         assert (await client.post('/api/v1/projects', headers={'Origin': 'http://test'})).status_code == 200
         assert (await client.post('/api/v1/auth/refresh')).status_code == 200
         assert (await client.post('/api/v1/auth/logout')).status_code == 200
-        assert (await client.get('/api/v1/projects')).status_code == 401
+        # Without a session cookie the request falls back to the local admin.
+        assert (await client.get('/api/v1/auth/me')).json()['username'] == 'admin'
 
 
 @pytest.mark.asyncio

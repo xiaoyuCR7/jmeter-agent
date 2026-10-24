@@ -147,38 +147,44 @@
         ref="formRef"
         :model="form"
         :rules="rules"
-        label-width="140px"
+        label-width="90px"
         label-position="right"
       >
-        <el-form-item :label="t('settings.form.modelId')" prop="id">
-          <el-input 
-            v-model="form.id" 
-            :placeholder="t('settings.form.modelIdPlaceholder')"
-            :disabled="isEdit"
-          />
-          <div class="form-tip">{{ t('settings.form.modelIdTip') }}</div>
+        <el-form-item :label="t('settings.form.provider')">
+          <el-radio-group v-model="form.provider" @change="onProviderChange">
+            <el-radio-button v-for="p in PROVIDERS" :key="p.key" :value="p.key">
+              {{ p.label || t('settings.form.providerCustom') }}
+            </el-radio-button>
+          </el-radio-group>
         </el-form-item>
-        
+
         <el-form-item :label="t('settings.form.model')" prop="model">
-          <el-input v-model="form.model" :placeholder="t('settings.form.modelPlaceholder')" />
-          <div class="form-tip">{{ t('settings.form.modelTip') }}</div>
+          <el-select
+            v-model="form.model"
+            filterable
+            allow-create
+            default-first-option
+            :placeholder="t('settings.form.modelSelectPlaceholder')"
+          >
+            <el-option v-for="m in currentProvider.models" :key="m" :label="m" :value="m" />
+          </el-select>
         </el-form-item>
-        
+
+        <el-form-item v-if="form.provider === 'custom'" :label="t('settings.form.apiBase')" prop="api_base">
+          <el-input v-model="form.api_base" placeholder="https://api.xxx.com/v1" />
+          <div class="form-tip">{{ t('settings.form.apiBaseCustomTip') }}</div>
+        </el-form-item>
+
         <el-form-item :label="t('settings.form.apiKey')" prop="api_key">
-          <el-input 
-            v-model="form.api_key" 
-            type="password" 
+          <el-input
+            v-model="form.api_key"
+            type="password"
             show-password
-            :placeholder="t('settings.form.apiKeyPlaceholder')"
+            :placeholder="isEdit ? t('settings.form.apiKeyKeep') : t('settings.form.apiKeyPlaceholder')"
           />
         </el-form-item>
-        
-        <el-form-item :label="t('settings.form.apiBase')" prop="api_base">
-          <el-input v-model="form.api_base" placeholder="https://api.xxx.com/v1" />
-          <div class="form-tip">{{ t('settings.form.apiBaseTip') }}</div>
-        </el-form-item>
-        
-        <el-form-item :label="t('settings.form.enabled')" prop="enabled">
+
+        <el-form-item v-if="isEdit" :label="t('settings.form.enabled')">
           <el-switch v-model="form.enabled" />
         </el-form-item>
       </el-form>
@@ -246,22 +252,54 @@ const pathsForm = reactive({
   reports_dir: ''
 })
 
+// 服务商预设：选中后自动带出 API 地址和适配器，无需手填
+const PROVIDERS = [
+  { key: 'deepseek', label: 'DeepSeek', api_base: 'https://api.deepseek.com/v1', adapter_type: 'openai_compatible',
+    models: ['deepseek-chat', 'deepseek-reasoner'] },
+  { key: 'qwen', label: '通义千问', api_base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', adapter_type: 'openai_compatible',
+    models: ['qwen-plus', 'qwen-max', 'qwen-turbo'] },
+  { key: 'openai', label: 'OpenAI', api_base: 'https://api.openai.com/v1', adapter_type: 'openai_compatible',
+    models: ['gpt-4o', 'gpt-4o-mini'] },
+  { key: 'anthropic', label: 'Claude', api_base: '', adapter_type: 'anthropic',
+    models: ['claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'] },
+  { key: 'custom', label: '', api_base: '', adapter_type: 'openai_compatible', models: [] as string[] }
+]
+
 const form = ref({
   id: '',
+  provider: 'deepseek',
   model: '',
   api_key: '',
   api_base: '',
   enabled: true
 })
 
-const rules = {
-  id: [
-    { required: true, message: t('settings.rule.modelIdRequired'), trigger: 'blur' },
-    { pattern: /^[a-z0-9_-]+$/, message: t('settings.rule.modelIdPattern'), trigger: 'blur' }
-  ],
-  model: [{ required: true, message: t('settings.rule.modelIdRequired2'), trigger: 'blur' }],
-  api_key: [{ required: true, message: t('settings.rule.apiKeyRequired'), trigger: 'blur' }]
+const currentProvider = computed(() => PROVIDERS.find(p => p.key === form.value.provider) || PROVIDERS[PROVIDERS.length - 1])
+
+const onProviderChange = () => {
+  form.value.model = currentProvider.value.models[0] || ''
 }
+
+// 编辑时根据已保存的地址/适配器反推服务商
+const detectProvider = (row: any) => {
+  if (row.adapter_type === 'anthropic') return 'anthropic'
+  return PROVIDERS.find(p => p.api_base && p.api_base === row.api_base)?.key || 'custom'
+}
+
+// 由模型名生成唯一标识，如 deepseek-chat、deepseek-chat-2
+const generateId = (model: string) => {
+  const base = model.toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'model'
+  const taken = new Set(modelConfigs.value.map((c: any) => c.id))
+  let id = base
+  for (let i = 2; taken.has(id); i++) id = `${base}-${i}`
+  return id
+}
+
+const rules = computed(() => ({
+  model: [{ required: true, message: t('settings.rule.modelIdRequired2'), trigger: 'blur' }],
+  api_key: isEdit.value ? [] : [{ required: true, message: t('settings.rule.apiKeyRequired'), trigger: 'blur' }],
+  api_base: [{ required: true, message: t('settings.rule.apiBaseRequired'), trigger: 'blur' }]
+}))
 
 const fetchData = async () => {
   loading.value = true
@@ -322,7 +360,8 @@ const openAddDialog = () => {
   isEdit.value = false
   form.value = {
     id: '',
-    model: '',
+    provider: PROVIDERS[0].key,
+    model: PROVIDERS[0].models[0],
     api_key: '',
     api_base: '',
     enabled: true
@@ -334,6 +373,7 @@ const openEditDialog = (row: any) => {
   isEdit.value = true
   form.value = {
     id: row.id,
+    provider: detectProvider(row),
     model: row.model || '',
     api_key: '',
     api_base: row.api_base || '',
@@ -348,19 +388,16 @@ const handleSubmit = async () => {
   
   submitting.value = true
   try {
-    let apiKey = form.value.api_key
-    if (isEdit.value && !apiKey) {
-      const original = modelConfigs.value.find((c: any) => c.id === form.value.id)
-      if (original) {
-        apiKey = original.api_key
-      }
-    }
-
+    const provider = currentProvider.value
+    const model = form.value.model.trim()
     const payload = {
-      id: form.value.id,
-      model: form.value.model,
-      api_key: apiKey,
-      api_base: form.value.api_base || null,
+      id: isEdit.value ? form.value.id : generateId(model),
+      name: provider.label ? `${provider.label} ${model}` : model,
+      model,
+      // 编辑时留空：后端把 "***" 识别为保留原 Key
+      api_key: form.value.api_key || '***',
+      api_base: (provider.key === 'custom' ? form.value.api_base.trim() : provider.api_base) || null,
+      adapter_type: provider.adapter_type,
       enabled: form.value.enabled
     }
     

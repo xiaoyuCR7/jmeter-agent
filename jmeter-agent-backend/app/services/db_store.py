@@ -394,9 +394,24 @@ class DBStore:
                 metrics_snapshot=data.get("metrics_snapshot", {}),
                 is_active=data.get("is_active", True),
             )
+            if b.is_active:
+                await self._deactivate_baselines(s, b.project_id, b.test_plan_id)
             s.add(b)
             await s.commit()
             return self._baseline_to_dict(b)
+
+    async def _deactivate_baselines(self, s, project_id: str, test_plan_id: Optional[str],
+                                    keep_id: Optional[int] = None):
+        """Deactivate the active baselines of exactly one project/test-plan scope."""
+        stmt = update(BaselineModel).where(
+            BaselineModel.project_id == project_id,
+            BaselineModel.is_active == True,
+            BaselineModel.test_plan_id == test_plan_id if test_plan_id
+            else BaselineModel.test_plan_id.is_(None),
+        )
+        if keep_id is not None:
+            stmt = stmt.where(BaselineModel.id != keep_id)
+        await s.execute(stmt.values(is_active=False))
 
     async def list_baselines(self, project_id: str = None) -> list:
         conditions = _project_conditions(BaselineModel.project_id, project_id)
@@ -440,16 +455,7 @@ class DBStore:
             if not b:
                 return None
             _require_project(b.project_id, write=True)
-            stmt = select(BaselineModel).where(
-                BaselineModel.project_id == b.project_id,
-                BaselineModel.id != baseline_id,
-                BaselineModel.is_active == True,
-            )
-            if b.test_plan_id:
-                stmt = stmt.where(BaselineModel.test_plan_id == b.test_plan_id)
-            siblings = (await s.execute(stmt)).scalars()
-            for sibling in siblings:
-                sibling.is_active = False
+            await self._deactivate_baselines(s, b.project_id, b.test_plan_id, keep_id=baseline_id)
             b.is_active = True
             await s.commit()
             return self._baseline_to_dict(b)

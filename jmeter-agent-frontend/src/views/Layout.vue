@@ -85,7 +85,6 @@
           <h2>{{ pageTitle }}</h2>
         </div>
         <div class="header-right">
-          <el-button text @click="signOut">退出 / Sign out</el-button>
           <div class="resource-bar" v-if="resources" :title="t('layout.resources')">
             <span class="res-item" :class="{ warn: resources.cpu_percent > 70, danger: resources.cpu_percent > 85 }">
               CPU {{ resources.cpu_percent }}%
@@ -110,14 +109,13 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { api } from '@/api'
 import ToolConfirmations from '@/components/ToolConfirmations.vue'
 import { ArrowLeft, Menu, Connection, Document, VideoPlay, DataAnalysis, MagicStick, Upload, ChatDotRound, Setting, Clock, Aim } from '@element-plus/icons-vue'
 import { useI18n } from '@/composables/useI18n'
 
 const route = useRoute()
-const router = useRouter()
 const { t } = useI18n()
 const aiConnected = ref(false)
 const sidebarCollapsed = ref(false)
@@ -126,11 +124,6 @@ const resources = ref<any>(null)
 let resourceTimer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 let resourceRequestPending = false
-
-async function signOut() {
-  await api.logout()
-  await router.replace('/login')
-}
 
 const activeMenu = computed(() => route.path)
 const pageTitle = computed(() => (route.meta.titleKey ? t(route.meta.titleKey as string) : 'JMeter Agent'))

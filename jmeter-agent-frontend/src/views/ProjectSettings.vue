@@ -356,14 +356,14 @@ const envDialogForm = reactive({
 
 // Rebuild a record from table rows; returns null when duplicate keys exist.
 function rowsToRecord(rows: KVRow[]): Record<string, string> | null {
-  const out: Record<string, string> = {}
+  const out = new Map<string, string>()
   for (const r of rows) {
     const k = r.key.trim()
     if (!k) continue
-    if (k in out) return null
-    out[k] = r.value
+    if (out.has(k)) return null
+    out.set(k, r.value)
   }
-  return out
+  return Object.fromEntries(out)
 }
 
 function applyEnvVars(env: EnvData) {
@@ -522,17 +522,26 @@ async function submitEnvDialog() {
   }
 }
 
-async function updateEnv(env: EnvData) {
+// Auto-saves send the whole record, so they must reach the server in edit order.
+const envSaves = new Map<string, Promise<void>>()
+
+function updateEnv(env: EnvData) {
   if (!canWrite.value) return
-  try {
-    await api.updateEnvironment(projectId.value, env.id, {
-      base_url: env.base_url,
-      variables: env.variables,
-      headers: env.headers,
-    })
-  } catch {
-    // Silently fail on auto-save
+  const id = projectId.value
+  const payload = {
+    base_url: env.base_url,
+    variables: { ...env.variables },
+    headers: { ...env.headers },
   }
+  const save = (envSaves.get(env.id) || Promise.resolve()).then(async () => {
+    try {
+      await api.updateEnvironment(id, env.id, payload)
+    } catch (e: any) {
+      ElMessage.error(t('projectSettings.message.saveFailed') + ': ' + (e.response?.data?.detail || e.message))
+    }
+  })
+  envSaves.set(env.id, save)
+  return save
 }
 
 async function setActive(envId: string) {
