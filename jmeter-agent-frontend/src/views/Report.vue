@@ -17,7 +17,8 @@
         </div>
       </el-card>
 
-      <EvidencePanel :evidence="report.evidence" :sla-result="report.sla_result" :project-id="reportProjectId" />
+      <EvidencePanel :evidence="report.evidence" :sla-result="report.sla_result" :project-id="reportProjectId"
+        :timeline="report.summary?.timeline_segments" @updated="report.evidence = $event" />
 
       <el-card class="compare-card" v-if="comparisonEnabled">
         <template #header>

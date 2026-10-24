@@ -148,6 +148,10 @@
       <el-tab-pane :label="localText('性能需求', 'Performance requirements')" name="requirements" lazy>
         <RequirementsPanel :project-id="projectId" />
       </el-tab-pane>
+
+      <el-tab-pane :label="localText('服务端监控', 'Server monitoring')" name="monitoring" lazy>
+        <MonitoringPanel :project-id="projectId" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- Add/Edit Environment Dialog -->
@@ -185,6 +189,7 @@ import {
 } from '@element-plus/icons-vue'
 import { api } from '@/api'
 import RequirementsPanel from '@/components/RequirementsPanel.vue'
+import MonitoringPanel from '@/components/MonitoringPanel.vue'
 import { useI18n } from '@/composables/useI18n'
 
 const { t, currentLang } = useI18n()
@@ -206,7 +211,7 @@ const route = useRoute()
 const router = useRouter()
 const projectId = computed(() => route.params.projectId as string)
 
-const activeSettingsTab = ref(route.query.tab === 'requirements' ? 'requirements' : 'info')
+const activeSettingsTab = ref(['requirements', 'monitoring'].includes(route.query.tab as string) ? route.query.tab as string : 'info')
 const savingInfo = ref(false)
 const savingEnv = ref(false)
 // Project form

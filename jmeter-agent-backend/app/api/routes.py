@@ -50,7 +50,7 @@ from app.services.jmeter.function_registry import get_all_functions
 from app.services.ai.agents import TestPlanAgent, AnalysisAgent, WorkflowAgent
 from app.services.ai.agents.analysis_agent import AnalysisExecutionError
 from app.services.openapi_importer import OpenAPIImporter
-from app.services.ml_analysis import ml_detector, metrics_correlator
+from app.services.ml_analysis import ml_detector
 from app.services.ai.agents.selfheal_agent import selfheal
 from app.services.ai.agent.types import AgentState
 from app.services.ai.agent.base import BaseAgent

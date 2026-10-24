@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.services import requirements as requirement_service
+from app.services import server_metrics
 from app.services.storage import store
 
 router = APIRouter(tags=["requirements"])
@@ -53,6 +54,55 @@ async def extract_requirements(project_id: str, body: ExtractRequest):
     except Exception as error:
         raise HTTPException(502, f"Requirement extraction failed: {type(error).__name__}") from error
     return draft.model_dump()
+
+
+@router.get("/monitoring/presets")
+async def monitoring_presets():
+    return {name: [q.model_dump() for q in queries] for name, queries in server_metrics.PRESETS.items()}
+
+
+@router.get("/projects/{project_id}/monitoring")
+async def get_monitoring(project_id: str):
+    _require_project(project_id)
+    config = await server_metrics.get_config(project_id)
+    return config.model_dump() if config else None
+
+
+@router.put("/projects/{project_id}/monitoring")
+async def save_monitoring(project_id: str, body: server_metrics.MonitoringConfig):
+    _require_project(project_id)
+    return (await server_metrics.save_config(project_id, body)).model_dump()
+
+
+@router.delete("/projects/{project_id}/monitoring")
+async def delete_monitoring(project_id: str):
+    _require_project(project_id)
+    return {"deleted": await server_metrics.delete_config(project_id)}
+
+
+@router.post("/projects/{project_id}/monitoring/test")
+async def test_monitoring(project_id: str, body: server_metrics.MonitoringConfig):
+    """Run each query over the last five minutes so the user can check the config before saving."""
+    _require_project(project_id)
+    from datetime import datetime, timedelta
+    end = datetime.now() - timedelta(seconds=60)
+    raw = await server_metrics.collect(body, end - timedelta(minutes=3), end)
+    return [{"name": m["name"], "series": len(m["series"]), "error": m.get("error")} for m in raw["metrics"]]
+
+
+@router.post("/executions/{execution_id}/server-metrics/refresh")
+async def refresh_server_metrics(execution_id: str):
+    """Discard the cached snapshot and query Prometheus again for this run."""
+    import os
+    execution = store.executions.get(execution_id)
+    if execution is None:
+        raise HTTPException(404, "Execution not found")
+    if execution.report_dir:
+        try:
+            os.remove(os.path.join(execution.report_dir, server_metrics.CACHE_FILE))
+        except FileNotFoundError:
+            pass
+    return await execution_evidence(execution_id)
 
 
 @router.get("/executions/{execution_id}/evidence")

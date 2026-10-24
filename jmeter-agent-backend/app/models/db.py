@@ -141,6 +141,14 @@ class PerformanceRequirementModel(Base):
     updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
 
 
+class MonitoringConfigModel(Base):
+    """Per-project Prometheus endpoint and queries (see services/server_metrics.py)."""
+    __tablename__ = "monitoring_configs"
+
+    project_id = Column(String(50), ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    data = Column(JSON, nullable=False)
+
+
 OBSOLETE_TABLES = (
     "schedule_dispatches", "schedule_principals", "schedules", "tool_confirmations",
     "analysis_receipt_owners", "analysis_receipts", "resource_leases", "mcp_session_messages",

@@ -102,13 +102,50 @@ export interface RequirementEvaluation {
   load_profile: LoadProfile | null
 }
 
+export interface MetricQuery {
+  name: string
+  promql: string
+  unit: string
+  saturation: number | null
+}
+
+export interface MonitoringConfig {
+  prometheus_url: string
+  queries: MetricQuery[]
+  step_seconds?: number | null
+}
+
+export interface ServerMetricRow {
+  name: string
+  unit: string
+  series?: string
+  avg?: number
+  max?: number
+  p95?: number
+  peak_at_s?: number
+  saturation?: number | null
+  above_saturation_pct?: number | null
+  corr_response_time?: number | null
+  error?: string
+}
+
+export interface ServerMetricsEvidence {
+  status: 'ok' | 'not_configured' | 'error'
+  error?: string
+  collected_at?: string
+  prometheus_url?: string
+  metrics?: ServerMetricRow[]
+  findings?: string[]
+  chart?: { name: string; unit: string; series: string; points: [number, number][] }[]
+}
+
 export interface ExecutionEvidence {
   execution_id: string
   project_id: string
   test_plan_id: string | null
   requirements: RequirementEvaluation
   baseline: Record<string, any> | null
-  server_metrics: Record<string, any> | null
+  server_metrics: ServerMetricsEvidence | null
 }
 
 const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
@@ -208,6 +245,15 @@ export const api = {
   extractRequirements: (projectId: string, text: string, sourceName = '', model?: string) =>
     instance.post<PerformanceRequirements>(`/projects/${encodeURIComponent(projectId)}/requirements/extract`,
       { text, source_name: sourceName, model }, { timeout: 300000 }),
+  getMonitoringPresets: () => instance.get<Record<string, MetricQuery[]>>('/monitoring/presets'),
+  getMonitoring: (projectId: string) => instance.get<MonitoringConfig | null>(`/projects/${encodeURIComponent(projectId)}/monitoring`),
+  saveMonitoring: (projectId: string, data: MonitoringConfig) =>
+    instance.put<MonitoringConfig>(`/projects/${encodeURIComponent(projectId)}/monitoring`, data),
+  deleteMonitoring: (projectId: string) => instance.delete(`/projects/${encodeURIComponent(projectId)}/monitoring`),
+  testMonitoring: (projectId: string, data: MonitoringConfig) =>
+    instance.post<{ name: string; series: number; error: string | null }[]>(`/projects/${encodeURIComponent(projectId)}/monitoring/test`, data),
+  refreshServerMetrics: (executionId: string) =>
+    instance.post<ExecutionEvidence>(`/executions/${encodeURIComponent(executionId)}/server-metrics/refresh`),
   getExecutionEvidence: (executionId: string) => instance.get<ExecutionEvidence>(`/executions/${encodeURIComponent(executionId)}/evidence`),
 
   generateTestPlan: (data: any) => instance.post('/test-plans/generate', data),
@@ -275,9 +321,6 @@ export const api = {
 
   detectAnomalies: (execution_id: string) =>
     instance.post('/analysis/anomalies', null, { params: { execution_id } }),
-
-  correlateMetrics: (execution_id: string, prometheus_url?: string, promql?: string) =>
-    instance.post('/analysis/correlate', null, { params: { execution_id, prometheus_url, promql } }),
 
   checkResources: () => instance.get('/system/resources'),
 
