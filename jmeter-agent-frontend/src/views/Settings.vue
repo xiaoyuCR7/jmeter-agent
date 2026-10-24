@@ -263,7 +263,7 @@ const pathsForm = reactive({
 const PROVIDERS = [
   { key: 'deepseek', label: 'DeepSeek', api_base: 'https://api.deepseek.com/v1', adapter_type: 'openai_compatible',
     models: ['deepseek-chat', 'deepseek-reasoner'] },
-  { key: 'qwen', label: '通义千问', api_base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', adapter_type: 'openai_compatible',
+  { key: 'qwen', label: 'Qwen 通义千问', api_base: 'https://dashscope.aliyuncs.com/compatible-mode/v1', adapter_type: 'openai_compatible',
     models: ['qwen-plus', 'qwen-max', 'qwen-turbo'] },
   { key: 'openai', label: 'OpenAI', api_base: 'https://api.openai.com/v1', adapter_type: 'openai_compatible',
     models: ['gpt-4o', 'gpt-4o-mini'] },

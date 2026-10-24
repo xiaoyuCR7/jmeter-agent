@@ -35,7 +35,7 @@
           <template #default="{ row }"><span class="num">{{ formatTime(row.start_time) }}</span></template>
         </el-table-column>
         <el-table-column :label="L('测试计划', 'Test plan')" prop="test_plan_name" min-width="160" show-overflow-tooltip />
-        <el-table-column :label="L('状态', 'Status')" width="100">
+        <el-table-column :label="L('状态', 'Status')" width="124">
           <template #default="{ row }"><StatusTag :status="row.status" /></template>
         </el-table-column>
         <el-table-column :label="L('需求判定', 'Verdict')" width="130">
@@ -90,6 +90,8 @@ async function load() {
 }
 watch(() => props.projectId, load, { immediate: true })
 
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+
 const steps = computed(() => {
   const base = `/projects/${props.projectId}`
   const reqCount = requirements.value?.items.length || 0
@@ -98,13 +100,13 @@ const steps = computed(() => {
   return [
     { key: 'requirements', title: L('性能需求', 'Performance requirements'), done: reqCount > 0, to: `${base}/requirements`,
       action: L('从文档提取', 'Extract from document'),
-      status: reqCount ? L(`${reqCount} 条需求`, `${reqCount} requirements`) : L('还没有需求，报告无法给出达标判定', 'None yet, so reports cannot give verdicts') },
+      status: reqCount ? L(`${reqCount} 条需求`, plural(reqCount, 'requirement')) : L('还没有需求，报告无法给出达标判定', 'None yet, so reports cannot give verdicts') },
     { key: 'plans', title: L('测试计划', 'Test plans'), done: planCount.value > 0, to: `${base}/plans`,
       action: L('新建测试计划', 'New test plan'),
-      status: planCount.value ? L(`${planCount.value} 个测试计划`, `${planCount.value} plans`) : L('还没有测试计划', 'No test plans yet') },
+      status: planCount.value ? L(`${planCount.value} 个测试计划`, plural(planCount.value, 'test plan')) : L('还没有测试计划', 'No test plans yet') },
     { key: 'monitoring', title: L('服务端监控', 'Server monitoring'), done: queries > 0, to: `${base}/settings?section=monitoring`,
       action: L('配置 Prometheus', 'Configure Prometheus'),
-      status: queries ? L(`${queries} 个指标`, `${queries} metrics`) : L('可选：配置后报告会附带服务端指标', 'Optional: adds server metrics to reports') },
+      status: queries ? L(`${queries} 个指标`, plural(queries, 'metric')) : L('可选：配置后报告会附带服务端指标', 'Optional: adds server metrics to reports') },
     { key: 'baselines', title: L('性能基线', 'Baseline'), done: active.length > 0, to: `${base}/baselines`,
       action: L('查看说明', 'How to add'),
       status: active.length ? active.map(b => b.name).join('、') : L('在一份满意的报告上点「设为基线」', 'Use "Set as baseline" on a good report') },

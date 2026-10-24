@@ -267,7 +267,7 @@ async function remove() {
 .model-select { width: 200px; margin-left: auto; }
 .req-table :deep(.el-input-number) { width: 100%; }
 .target, .condition, .source { display: flex; gap: 6px; align-items: center; }
-.scope { width: 80px; flex-shrink: 0; }
+.scope { width: 116px; flex-shrink: 0; }
 .op { width: 64px; flex-shrink: 0; }
 .num { flex: 1; min-width: 70px; }
 .add { margin-top: 8px; }

@@ -24,7 +24,7 @@
             <div v-if="!projectId" class="sub">{{ row.project_name }}</div>
           </template>
         </el-table-column>
-        <el-table-column :label="L('状态', 'Status')" width="110">
+        <el-table-column :label="L('状态', 'Status')" width="124">
           <template #default="{ row }">
             <StatusTag :status="row.status" />
             <el-progress v-if="row.status === 'running'" :percentage="row.progress || 0" :stroke-width="4" :show-text="false" />
@@ -53,7 +53,7 @@
         <el-table-column :label="L('时长', 'Duration')" width="84" align="right">
           <template #default="{ row }"><span class="num">{{ formatDuration(row.start_time, row.end_time) }}</span></template>
         </el-table-column>
-        <el-table-column :label="L('AI 分析', 'AI analysis')" width="80">
+        <el-table-column :label="L('AI 分析', 'AI analysis')" width="104">
           <template #default="{ row }">
             <span v-if="row.has_ai_analysis" class="ai-done">{{ L('已分析', 'Done') }}</span>
             <span v-else class="sub">-</span>

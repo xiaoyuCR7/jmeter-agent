@@ -173,7 +173,7 @@ const messages: Translations = {
   'route.createTestPlan': { 'zh-CN': '创建测试计划', en: 'Create Test Plan' },
   'route.testCaseEditor': { 'zh-CN': '编辑测试计划', en: 'Edit test plan' },
   'route.projectSettings': { 'zh-CN': '项目设置', en: 'Project Settings' },
-  'route.executions': { 'zh-CN': '执行记录', en: 'Executions' },
+  'route.executions': { 'zh-CN': '执行记录', en: 'Runs' },
   'route.report': { 'zh-CN': '测试报告', en: 'Test Report' },
   'route.settings': { 'zh-CN': '设置', en: 'Settings' },
 
@@ -335,7 +335,7 @@ const messages: Translations = {
   'jmxEditor.loadError': { 'zh-CN': '加载失败: {{ msg }}', en: 'Load failed: {{ msg }}' },
 
   // ── Layout view ──
-  'layout.nav.executions': { 'zh-CN': '执行记录', en: 'Executions' },
+  'layout.nav.executions': { 'zh-CN': '执行记录', en: 'Runs' },
   'layout.nav.mcp': { 'zh-CN': '外部助手接入（MCP）', en: 'Assistants (MCP)' },
   'layout.nav.aiChat': { 'zh-CN': 'AI工作流', en: 'AI Workflow' },
   'layout.nav.settings': { 'zh-CN': '设置', en: 'Settings' },

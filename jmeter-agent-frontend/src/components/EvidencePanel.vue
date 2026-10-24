@@ -12,7 +12,7 @@
         <el-table-column :label="L('编号', 'ID')" prop="id" width="70" />
         <el-table-column :label="L('需求', 'Requirement')" min-width="220">
           <template #default="{ row }">
-            <div>{{ row.description }}</div>
+            <div>{{ describe(row) }}</div>
             <div v-if="row.matched_labels.length > 1" class="sub">{{ L('匹配接口', 'Matched') }}: {{ row.matched_labels.join(', ') }}</div>
           </template>
         </el-table-column>
@@ -166,6 +166,16 @@ const statusType = (s: string) => ({ pass: 'success', fail: 'danger', missing: '
 const statusText = (s: string) => ({ pass: L('达标', 'Pass'), fail: L('不达标', 'Fail'), missing: L('无数据', 'No data') } as Record<string, string>)[s]
 const rowClass = ({ row }: { row: { status: string } }) => row.status === 'fail' ? 'row-fail' : ''
 const format = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(2)
+// Built here rather than from the server's description, which is written for the (Chinese) analysis prompt.
+const describe = (row: { transaction: string | null; metric: string; operator: string; expected: number }) => {
+  const metric = ({
+    avg_response_time: L('平均响应时间 ms', 'Avg response ms'), p90: 'P90 ms', p95: 'P95 ms', p99: 'P99 ms',
+    max_response_time: L('最大响应时间 ms', 'Max response ms'), error_rate: L('错误率 %', 'Error rate %'),
+    throughput: L('吞吐量 TPS', 'Throughput TPS'),
+  } as Record<string, string>)[row.metric] || row.metric
+  const op = ({ lte: '≤', lt: '<', gte: '≥', gt: '>' } as Record<string, string>)[row.operator] || row.operator
+  return `${row.transaction ? `[${row.transaction}] ` : ''}${metric} ${op} ${row.expected}`
+}
 
 const history = computed(() => props.evidence?.baseline ?? null)
 const comparisons = computed(() => [
