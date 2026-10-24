@@ -177,6 +177,8 @@
     <!-- Step 3: Test Configuration -->
     <div v-if="activeStep === 2" class="step-content">
       <h3>{{ t('createPlan.testConfig') }}</h3>
+      <el-alert v-if="profileApplied" type="success" :closable="false" show-icon style="margin-bottom: 12px"
+        :title="currentLang === 'en' ? 'Prefilled from the load profile in the project performance requirements.' : '已按项目性能需求中的负载模型预填并发与时长。'" />
       <el-form :model="form.test_config" label-position="top">
         <el-row :gutter="12">
           <el-col :span="8" :xs="24" :sm="12" :md="8">
@@ -270,7 +272,7 @@ import { useI18n } from '@/composables/useI18n'
 
 const router = useRouter()
 const route = useRoute()
-const { t } = useI18n()
+const { t, currentLang } = useI18n()
 
 const getTemplateName = (id: string) => t(`createPlan.template.${id}.name`) || null
 const getTemplateDesc = (id: string) => t(`createPlan.template.${id}.desc`) || null
@@ -488,7 +490,29 @@ onMounted(async () => {
       selectTemplate(template)
     }
   }
+  await applyRequirementLoadProfile()
 })
+
+// The project's documented load model drives the plan, so tests measure what the requirements specify.
+const profileApplied = ref(false)
+async function applyRequirementLoadProfile() {
+  if (!projectId.value) return
+  try {
+    const profile = (await api.getRequirements(projectId.value)).data?.load_profile
+    if (!profile) return
+    const config = form.value.test_config as any
+    const mapping: [keyof typeof profile, string][] = [
+      ['concurrency', 'concurrent_users'], ['ramp_up_seconds', 'ramp_up_seconds'],
+      ['duration_seconds', 'duration_seconds'], ['target_tps', 'target_rps'],
+    ]
+    for (const [from, to] of mapping) {
+      if (typeof profile[from] === 'number') {
+        config[to] = profile[from]
+        profileApplied.value = true
+      }
+    }
+  } catch { /* requirements are optional */ }
+}
 </script>
 
 <style scoped lang="scss">

@@ -48,6 +48,69 @@ export interface AgentStreamEvent {
   data?: (Record<string, unknown> & { analysis?: RegisteredAnalysis }) | null
 }
 
+export type RequirementMetric = 'avg_response_time' | 'p90' | 'p95' | 'p99' | 'max_response_time' | 'error_rate' | 'throughput'
+export type RequirementOperator = 'lte' | 'lt' | 'gte' | 'gt'
+
+export interface RequirementItem {
+  id: string
+  scope: 'global' | 'transaction'
+  transaction: string | null
+  metric: RequirementMetric
+  operator: RequirementOperator
+  value: number
+  source: string
+  source_verified: boolean
+}
+
+export interface LoadProfile {
+  concurrency: number | null
+  ramp_up_seconds: number | null
+  duration_seconds: number | null
+  target_tps: number | null
+  source: string
+}
+
+export interface PerformanceRequirements {
+  items: RequirementItem[]
+  load_profile: LoadProfile
+  assumptions: string[]
+  source_name: string
+  updated_at?: string | null
+}
+
+export interface RequirementVerdict {
+  id: string
+  description: string
+  transaction: string | null
+  matched_labels: string[]
+  metric: RequirementMetric
+  operator: RequirementOperator
+  expected: number
+  actual: number | null
+  status: 'pass' | 'fail' | 'missing'
+  gap_pct: number | null
+  source: string
+  source_verified: boolean
+}
+
+export interface RequirementEvaluation {
+  verdict: 'pass' | 'fail' | 'incomplete' | 'none'
+  passed: number
+  failed: number
+  missing: number
+  items: RequirementVerdict[]
+  load_profile: LoadProfile | null
+}
+
+export interface ExecutionEvidence {
+  execution_id: string
+  project_id: string
+  test_plan_id: string | null
+  requirements: RequirementEvaluation
+  baseline: Record<string, any> | null
+  server_metrics: Record<string, any> | null
+}
+
 const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
 
 const instance = axios.create({
@@ -137,6 +200,16 @@ export const api = {
   createProject: (data: any) => instance.post('/projects', data),
   updateProject: (id: string, data: any) => instance.put(`/projects/${id}`, data),
   deleteProject: (id: string) => instance.delete(`/projects/${id}`),
+  getRequirements: (projectId: string) =>
+    instance.get<PerformanceRequirements | null>(`/projects/${encodeURIComponent(projectId)}/requirements`),
+  saveRequirements: (projectId: string, data: PerformanceRequirements) =>
+    instance.put<PerformanceRequirements>(`/projects/${encodeURIComponent(projectId)}/requirements`, data),
+  deleteRequirements: (projectId: string) => instance.delete(`/projects/${encodeURIComponent(projectId)}/requirements`),
+  extractRequirements: (projectId: string, text: string, sourceName = '', model?: string) =>
+    instance.post<PerformanceRequirements>(`/projects/${encodeURIComponent(projectId)}/requirements/extract`,
+      { text, source_name: sourceName, model }, { timeout: 300000 }),
+  getExecutionEvidence: (executionId: string) => instance.get<ExecutionEvidence>(`/executions/${encodeURIComponent(executionId)}/evidence`),
+
   generateTestPlan: (data: any) => instance.post('/test-plans/generate', data),
   generateTestPlanInProject: (projectId: string, data: any) =>
     instance.post(`/projects/${projectId}/test-plans/generate`, data),

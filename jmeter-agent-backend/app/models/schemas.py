@@ -330,6 +330,7 @@ class TestExecutionInfo(BaseModel):
 
 class TestReport(BaseModel):
     execution_id: str
+    project_id: str = "default"
     test_plan_id: str
     test_plan_name: str
     start_time: Optional[datetime] = None
@@ -339,7 +340,8 @@ class TestReport(BaseModel):
     raw_data_path: Optional[str] = None
     html_report_path: Optional[str] = None
     ai_analysis: Optional[ReportAnalysis] = None
-    sla_result: Optional[Dict[str, Any]] = Field(None, description="SLA评估结果")
+    sla_result: Optional[Dict[str, Any]] = Field(None, description="SLA评估结果（未录入性能需求时的默认阈值）")
+    evidence: Optional[Dict[str, Any]] = Field(None, description="需求达标、基线对比、服务端指标等确定性证据")
     status: TestExecutionStatus
 
 

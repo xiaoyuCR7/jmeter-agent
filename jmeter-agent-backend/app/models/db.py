@@ -132,6 +132,15 @@ class BaselineModel(Base):
 
 # ── Schedule ─────────────────────────────────────────────
 
+class PerformanceRequirementModel(Base):
+    """One structured requirement set per project (see services/requirements.py)."""
+    __tablename__ = "performance_requirements"
+
+    project_id = Column(String(50), ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    data = Column(JSON, nullable=False)
+    updated_at = Column(DateTime, default=utc_now_naive, onupdate=utc_now_naive)
+
+
 OBSOLETE_TABLES = (
     "schedule_dispatches", "schedule_principals", "schedules", "tool_confirmations",
     "analysis_receipt_owners", "analysis_receipts", "resource_leases", "mcp_session_messages",

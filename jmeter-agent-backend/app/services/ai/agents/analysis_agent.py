@@ -358,8 +358,10 @@ class AnalysisAgent(BaseAgent):
                 historical_hypotheses=historical_hypotheses,
             )
 
-            # Step 3: Build task
-            base_task = self._build_base_task(exec_ref, fact, heuristics_prompt)
+            # Step 3: Build task. Deterministic evidence (requirements, baseline,
+            # server metrics) is computed here, never left to the model.
+            evidence = await self._collect_evidence(execution_id, fact)
+            base_task = self._build_base_task(exec_ref, fact, heuristics_prompt, evidence)
             task = RAG_AUGMENTED_TASK_TEMPLATE.format(
                 base_task=base_task,
                 rag_context=rag_context,
@@ -429,6 +431,7 @@ class AnalysisAgent(BaseAgent):
             "iterations": result.iterations,
             "error": postprocessing_error or result.error,
             "fact": fact.model_dump() if fact else None,
+            "evidence": evidence.model_dump() if evidence else None,
             "validation": validation.model_dump() if validation else None,
             "structured": structured.model_dump() if structured else None,
             "archive": archive_result,
@@ -503,13 +506,24 @@ class AnalysisAgent(BaseAgent):
 
     # === Prompt building ===
 
+    @staticmethod
+    async def _collect_evidence(execution_id: Optional[str], fact: FactSheet):
+        """Requirement/baseline/server evidence for registered executions only."""
+        if not execution_id or fact.raw_summary is None:
+            return None
+        from app.services.db_store import db_store
+        from app.services.evidence import build_evidence
+        execution = await db_store.get_execution(execution_id)
+        return await build_evidence(execution, fact.raw_summary) if execution else None
+
     def _build_base_task(
         self,
         exec_ref: str,
         fact: FactSheet,
         heuristics_prompt: str,
+        evidence=None,
     ) -> str:
-        """Build the base task prompt with the fact sheet."""
+        """Build the base task prompt with the fact sheet and deterministic evidence."""
         fact_json = fact.model_dump_json(exclude={"raw_summary"})
 
         parts = [
@@ -519,7 +533,12 @@ class AnalysisAgent(BaseAgent):
             f"测试类型: {fact.test_type}",
             f"\n## 本次测试事实表（不可篡改的 ground truth）\n```json\n{fact_json}\n```",
             f"\n{heuristics_prompt}",
-            "\n请基于以上事实表，给出深度分析报告。注意：",
+        ]
+        if evidence is not None:
+            from app.services.evidence import format_for_prompt
+            parts.append("\n" + format_for_prompt(evidence))
+        parts += [
+            "\n请基于以上事实表与证据，给出深度分析报告。注意：",
             "- 所有数字必须能在事实表中找到对应字段。",
             "- 解释性结论请以【假设】形式输出，并附带可验证预测和证伪实验设计。",
             "- 每个假设必须声明其依赖的指标字段名（如 avg_response_time, error_rate, p99）。",

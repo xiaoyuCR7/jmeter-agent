@@ -858,8 +858,17 @@ async def get_report(execution_id: str):
 
     plan = store.test_plans.get(execution.test_plan_id)
 
+    evidence = None
+    if summary.total_requests > 0:
+        from app.services.evidence import build_evidence
+        try:
+            evidence = (await build_evidence(execution, summary)).model_dump()
+        except Exception as e:
+            logger.warning("Evidence assembly failed for %s: %s", execution_id, e)
+
     report = TestReport(
         execution_id=execution_id,
+        project_id=execution.project_id or "default",
         test_plan_id=execution.test_plan_id,
         test_plan_name=plan.name if plan else "Unknown",
         start_time=execution.start_time,
@@ -870,6 +879,7 @@ async def get_report(execution_id: str):
         html_report_path=html_path,
         ai_analysis=getattr(execution, 'ai_analysis', None),
         sla_result=sla_result,
+        evidence=evidence,
         status=execution.status
     )
 

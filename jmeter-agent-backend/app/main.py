@@ -144,6 +144,9 @@ app.include_router(routes.router, prefix="/api/v1")
 from app.api.baseline_routes import router as baseline_router
 app.include_router(baseline_router, prefix="/api/v1")
 
+from app.api.requirement_routes import router as requirement_router
+app.include_router(requirement_router, prefix="/api/v1")
+
 from app.api.analysis_routes import router as analysis_router
 app.include_router(analysis_router, prefix="/api/v1")
 

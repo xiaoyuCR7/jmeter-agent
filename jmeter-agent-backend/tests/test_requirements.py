@@ -1,0 +1,147 @@
+"""Requirements: extraction keeps traceable quotes; verdicts are deterministic."""
+from unittest.mock import AsyncMock
+
+import httpx
+import pytest
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+from app.models import db
+from app.models.schemas import DetailedTestSummary
+from app.services import requirements as req
+from app.services.storage import store
+
+
+def summary(**overrides):
+    base = dict(total_requests=1000, avg_response_time=180, min_response_time=10, max_response_time=2400,
+                p95_response_time=650, p99_response_time=1200, error_rate=0.4, throughput=210,
+                received_bytes_per_sec=1, sent_bytes_per_sec=1,
+                percentiles={'p50': 150, 'p90': 480, 'p95': 650, 'p99': 1200},
+                per_label={
+                    'POST /api/login': {'count': 300, 'avg_response_time': 90, 'p90_response_time': 150,
+                                        'p95_response_time': 200, 'p99_response_time': 400, 'error_rate': 0.0,
+                                        'throughput': 60, 'max_response_time': 900},
+                    'POST /api/order/create': {'count': 400, 'avg_response_time': 320, 'p90_response_time': 700,
+                                               'p95_response_time': 900, 'p99_response_time': 1800, 'error_rate': 1.2,
+                                               'throughput': 80, 'max_response_time': 2400},
+                    'GET /api/order/list': {'count': 300, 'avg_response_time': 120, 'p90_response_time': 300,
+                                            'p95_response_time': 420, 'p99_response_time': 800, 'error_rate': 0.0,
+                                            'throughput': 70, 'max_response_time': 1000},
+                })
+    base.update(overrides)
+    return DetailedTestSummary(**base)
+
+
+def item(**fields):
+    return req.RequirementItem(**{'id': 'R1', 'metric': 'p95', 'operator': 'lte', 'value': 1000, **fields})
+
+
+def test_global_requirements_pass_and_fail_with_gap():
+    result = req.evaluate(req.PerformanceRequirements(items=[
+        item(id='R1', metric='p95', value=1000),
+        item(id='R2', metric='error_rate', operator='lt', value=0.1),
+        item(id='R3', metric='throughput', operator='gte', value=200),
+    ]), summary())
+    by_id = {v.id: v for v in result.items}
+    assert (by_id['R1'].status, by_id['R2'].status, by_id['R3'].status) == ('pass', 'fail', 'pass')
+    assert by_id['R2'].actual == 0.4 and by_id['R2'].gap_pct == 300.0
+    assert (result.verdict, result.passed, result.failed) == ('fail', 2, 1)
+
+
+def test_transaction_requirement_judges_every_matching_label_by_the_worst():
+    result = req.evaluate(req.PerformanceRequirements(items=[
+        item(scope='transaction', transaction='order', metric='p95', value=500)]), summary())
+    verdict = result.items[0]
+    assert set(verdict.matched_labels) == {'POST /api/order/create', 'GET /api/order/list'}
+    assert verdict.actual == 900 and verdict.status == 'fail'
+
+
+def test_exact_label_match_wins_over_substring_and_p90_is_supported():
+    result = req.evaluate(req.PerformanceRequirements(items=[
+        item(scope='transaction', transaction='POST /api/login', metric='p90', value=200)]), summary())
+    assert result.items[0].matched_labels == ['POST /api/login']
+    assert result.items[0].actual == 150 and result.verdict == 'pass'
+
+
+def test_unmatched_transaction_or_empty_run_is_missing_not_passing():
+    requirements = req.PerformanceRequirements(items=[item(scope='transaction', transaction='checkout')])
+    assert req.evaluate(requirements, summary()).verdict == 'incomplete'
+    empty = req.evaluate(req.PerformanceRequirements(items=[item()]), summary(total_requests=0))
+    assert empty.items[0].status == 'missing'
+
+
+def test_no_requirements_prompt_forbids_claiming_compliance():
+    evaluation = req.evaluate(None, summary())
+    assert evaluation.verdict == 'none'
+    assert '不要声称达标' in req.format_for_prompt(evaluation)
+
+
+def test_prompt_cites_ids_values_and_quotes():
+    evaluation = req.evaluate(req.PerformanceRequirements(items=[
+        item(id='R7', source='下单接口 95% 响应时间不超过 1 秒')]), summary())
+    text = req.format_for_prompt(evaluation)
+    assert 'R7' in text and '650' in text and '下单接口 95% 响应时间不超过 1 秒' in text
+
+
+@pytest.mark.asyncio
+async def test_extraction_verifies_quotes_and_drops_malformed_items():
+    document = '性能需求：\n1. 登录接口平均响应时间不超过 200ms。\n2. 系统错误率低于 0.1%。\n并发用户 500，持续 30 分钟。'
+    adapter = AsyncMock()
+    adapter.chat.return_value = '''```json
+{"items": [
+  {"id": "R1", "scope": "transaction", "transaction": "login", "metric": "avg_response_time",
+   "operator": "lte", "value": 200, "source": "登录接口平均响应时间不超过 200ms。"},
+  {"id": "R2", "scope": "global", "metric": "error_rate", "operator": "lt", "value": 0.1,
+   "source": "系统错误率必须低于千分之一"},
+  {"id": "R3", "metric": "latency", "operator": "lte", "value": 5}
+ ],
+ "load_profile": {"concurrency": 500, "duration_seconds": 1800, "source": "并发用户 500，持续 30 分钟。"},
+ "assumptions": ["未说明错误率统计口径"]}
+```'''
+    result = await req.extract_requirements(document, adapter, source_name='spec.md')
+    assert [i.id for i in result.items] == ['R1', 'R2']
+    assert result.items[0].source_verified is True
+    assert result.items[1].source_verified is False  # paraphrased, not quoted
+    assert result.load_profile.concurrency == 500 and result.source_name == 'spec.md'
+    assert result.assumptions == ['未说明错误率统计口径']
+
+
+@pytest.mark.asyncio
+async def test_extraction_rejects_empty_documents():
+    with pytest.raises(ValueError):
+        await req.extract_requirements('   ', AsyncMock())
+
+
+@pytest_asyncio.fixture
+async def api(tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from app.api.requirement_routes import router
+    from app.models.schemas import ProjectInfo
+    engine = create_async_engine('sqlite+aiosqlite:///' + str(tmp_path / 'state.db'))
+    monkeypatch.setattr(db, '_engine', engine)
+    monkeypatch.setattr(db, '_async_session_factory', async_sessionmaker(engine, expire_on_commit=False))
+    await db.init_db()
+    async with db.get_session_factory()() as session:
+        session.add(db.ProjectModel(id='shop', name='Shop'))
+        await session.commit()
+    monkeypatch.setattr(store, '_projects', {'shop': ProjectInfo(id='shop', name='Shop')})
+    app = FastAPI()
+    app.include_router(router, prefix='/api/v1')
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+        yield client
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_requirements_round_trip_and_project_scoping(api):
+    assert (await api.get('/api/v1/projects/shop/requirements')).json() is None
+    body = {'items': [{'id': 'R1', 'metric': 'p95', 'operator': 'lte', 'value': 800, 'source': 'P95 ≤ 800ms'}],
+            'load_profile': {'concurrency': 200}}
+    saved = (await api.put('/api/v1/projects/shop/requirements', json=body)).json()
+    assert saved['updated_at'] and saved['items'][0]['value'] == 800
+    assert (await api.get('/api/v1/projects/shop/requirements')).json()['load_profile']['concurrency'] == 200
+    assert (await api.get('/api/v1/projects/missing/requirements')).status_code == 404
+    duplicate = {'items': [body['items'][0], body['items'][0]]}
+    assert (await api.put('/api/v1/projects/shop/requirements', json=duplicate)).status_code == 422
+    assert (await api.delete('/api/v1/projects/shop/requirements')).json() == {'deleted': True}
+    assert (await api.get('/api/v1/projects/shop/requirements')).json() is None

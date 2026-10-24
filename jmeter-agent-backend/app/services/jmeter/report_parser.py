@@ -5,7 +5,8 @@ import time
 import logging
 from typing import Dict, Any, Optional
 from datetime import datetime
-from collections import defaultdict
+from array import array
+from collections import Counter, defaultdict
 
 from app.models.schemas import TestSummary, DetailedTestSummary, ErrorDetail, TimelineSegment, PerformanceTrend
 
@@ -40,32 +41,14 @@ class ReportParser:
         except (ValueError, IndexError):
             return 0
 
-    @staticmethod
-    def _timing_metrics(samples):
-        """Use the earliest sample start and latest response end, independent of row order."""
-        buckets = defaultdict(lambda: {"response_times": [], "errors": 0, "count": 0, "bytes": 0})
-        if not samples:
-            return 1.0, buckets
-        first_ts = min(sample[0] for sample in samples)
-        last_end = max(ts + max(elapsed, 0) for ts, elapsed, _, _ in samples)
-        duration = max((last_end - first_ts) / 1000.0, 0.001)
-        for ts, elapsed, received, success in samples:
-            start = ((ts - first_ts) // 30000) * 30
-            bucket = buckets[f"{start}-{start + 30}s"]
-            bucket["response_times"].append(elapsed)
-            bucket["count"] += 1
-            bucket["bytes"] += received
-            bucket["errors"] += int(not success)
-            bucket["duration"] = max(min(30.0, duration - start), 0.001)
-        return duration, buckets
-
     def parse_jtl(self, jtl_path: str) -> DetailedTestSummary:
         """解析JTL结果文件，返回详细的测试摘要"""
         if not os.path.exists(jtl_path):
             raise FileNotFoundError(f"JTL file not found: {jtl_path}")
 
-        # Brief stabilization wait — JMeter may still be flushing CSV buffers
-        self._wait_file_stable(jtl_path)
+        # A file JMeter is still flushing must settle first; finished reports need no wait.
+        if time.time() - os.path.getmtime(jtl_path) < self.SETTLED_AFTER_SECONDS:
+            self._wait_file_stable(jtl_path)
 
         with open(jtl_path, "r", encoding="utf-8") as f:
             first_line = f.readline().strip()
@@ -75,6 +58,8 @@ class ReportParser:
                 return self._parse_xml_jtl(f)
             else:
                 return self._parse_csv_jtl(f)
+
+    SETTLED_AFTER_SECONDS = 2.0
 
     def _wait_file_stable(self, path: str, max_wait: float = 5.0, interval: float = 0.5):
         """Wait until file size stops changing (JMeter finished flushing)."""
@@ -96,333 +81,40 @@ class ReportParser:
         """解析CSV格式的JTL，生成详细的分析报告数据"""
         # restval="" prevents None values in DictReader when rows are incomplete
         # (JMeter may still be flushing the CSV buffer when we start reading)
-        reader = csv.DictReader(file, restval="")
-
-        response_times = []
-        errors = 0
-        total = 0
-        received_bytes_total = 0
-        sent_bytes_total = 0
-        timed_samples = []
-        
-        # 错误详情收集
-        error_details = defaultdict(lambda: {"count": 0, "messages": []})
-        
-        # 响应时间分布
-        rt_distribution = {"0-100ms": 0, "100-300ms": 0, "300-500ms": 0,
-                          "500ms-1s": 0, "1s-3s": 0, "3s-5s": 0, ">5s": 0}
-
-        # 按采样器标签(接口)分组统计
-        per_label_data = defaultdict(lambda: {
-            "response_times": [], "errors": 0, "count": 0,
-            "bytes_received": 0, "bytes_sent": 0,
-        })
-
-        for row in reader:
-            total += 1
-            try:
-                elapsed = self._safe_int(row.get("elapsed"))
-                response_times.append(elapsed)
-                label = self._safe_str(row.get("label"), "Unnamed")
-
-                # Per-label tracking
-                per_label_data[label]["response_times"].append(elapsed)
-                per_label_data[label]["count"] += 1
-
-                # 响应时间分布
-                if elapsed < 100:
-                    rt_distribution["0-100ms"] += 1
-                elif elapsed < 300:
-                    rt_distribution["100-300ms"] += 1
-                elif elapsed < 500:
-                    rt_distribution["300-500ms"] += 1
-                elif elapsed < 1000:
-                    rt_distribution["500ms-1s"] += 1
-                elif elapsed < 3000:
-                    rt_distribution["1s-3s"] += 1
-                elif elapsed < 5000:
-                    rt_distribution["3s-5s"] += 1
-                else:
-                    rt_distribution[">5s"] += 1
-
-                # 错误统计 — _safe_str prevents None.lower() crash on incomplete rows
-                success = self._safe_str(row.get("success"), "true").lower() == "true"
-                response_code = self._safe_str(row.get("responseCode"))
-                response_message = self._safe_str(row.get("responseMessage"))
-
-                if not success:
-                    errors += 1
-                    per_label_data[label]["errors"] += 1
-                    error_key = f"{response_code}: {response_message}" if response_code else response_message
-                    if not error_key or error_key == ": ":
-                        error_key = "Unknown Error"
-                    error_details[error_key]["count"] += 1
-                    if len(error_details[error_key]["messages"]) < 3:
-                        error_details[error_key]["messages"].append(response_message or "No message")
-
-                bytes_received = self._safe_int(row.get("bytes"))
-                received_bytes_total += bytes_received
-                per_label_data[label]["bytes_received"] += bytes_received
-
-                sent_bytes = self._safe_int(row.get("sentBytes"))
-                sent_bytes_total += sent_bytes
-                per_label_data[label]["bytes_sent"] += sent_bytes
-
-                ts = self._safe_int(row.get("timeStamp"))
-                if ts > 0:
-                    timed_samples.append((ts, elapsed, bytes_received, success))
-
-            except (ValueError, KeyError):
-                continue
-
-        if total == 0:
-            return self._empty_summary()
-
-        response_times.sort()
-
-        # 计算持续时间（必须在 per-label 统计之前）
-        duration_seconds, time_bucket_data = self._timing_metrics(timed_samples)
-
-        # ── Per-label statistics ──────────────────────────
-        per_label_stats = {}
-        for label, data in per_label_data.items():
-            if data["count"] == 0:
-                continue
-            rts = sorted(data["response_times"])
-            per_label_stats[label] = {
-                "count": data["count"],
-                "avg_response_time": round(sum(rts) / len(rts), 2),
-                "min_response_time": rts[0],
-                "max_response_time": rts[-1],
-                "p95_response_time": round(self._percentile(rts, 0.95), 2),
-                "p99_response_time": round(self._percentile(rts, 0.99), 2),
-                "error_rate": round(data["errors"] / data["count"] * 100, 2),
-                "throughput": round(data["count"] / duration_seconds, 2),
-                "bytes_per_sec": round(data["bytes_received"] / duration_seconds, 2),
-            }
-
-        # 构建时间段分析
-        timeline_segments = []
-        for bucket_key in sorted(
-            (k for k in time_bucket_data.keys() if k and "-" in k),
-            key=self._bucket_sort_key,
-        ):
-            bucket = time_bucket_data[bucket_key]
-            rts = bucket["response_times"]
-            if rts:
-                timeline_segments.append(TimelineSegment(
-                    time_range=bucket_key,
-                    avg_response_time=round(sum(rts) / len(rts), 2),
-                    max_response_time=max(rts),
-                    throughput=round(bucket["count"] / bucket["duration"], 2),  # Tail buckets use their observed duration
-                    error_rate=round(bucket["errors"] / bucket["count"] * 100, 2) if bucket["count"] > 0 else 0,
-                    request_count=bucket["count"]
-                ))
-
-        # 构建错误详情
-        error_list = []
-        for error_key, data in sorted(error_details.items(), key=lambda x: x[1]["count"], reverse=True)[:10]:
-            error_list.append(ErrorDetail(
-                error_type=error_key[:100],  # 限制长度
-                count=data["count"],
-                percentage=round(data["count"] / total * 100, 2),
-                sample_messages=data["messages"][:3]
-            ))
-
-        # 性能趋势分析
-        trend = self._analyze_trend(timeline_segments)
-
-        # 响应时间分布百分比
-        rt_dist_pct = {k: round(v / total * 100, 2) for k, v in rt_distribution.items() if v > 0}
-
-        # Compute percentiles for both nested dict and top-level fields (SLA compat)
-        p50_val = round(self._percentile(response_times, 0.5), 2)
-        p90_val = round(self._percentile(response_times, 0.9), 2)
-        p95_val = round(self._percentile(response_times, 0.95), 2)
-        p99_val = round(self._percentile(response_times, 0.99), 2)
-
-        return DetailedTestSummary(
-            total_requests=total,
-            avg_response_time=round(sum(response_times) / len(response_times), 2) if response_times else 0,
-            min_response_time=response_times[0] if response_times else 0,
-            max_response_time=response_times[-1] if response_times else 0,
-            p95_response_time=p95_val,
-            p99_response_time=p99_val,
-            error_rate=round(errors / total * 100, 2),
-            throughput=round(total / duration_seconds, 2),
-            received_bytes_per_sec=round(received_bytes_total / duration_seconds, 2),
-            sent_bytes_per_sec=round(sent_bytes_total / duration_seconds, 2),
-            percentiles={
-                "p50": p50_val,
-                "p90": p90_val,
-                "p95": p95_val,
-                "p99": p99_val,
-            },
-            error_details=error_list,
-            timeline_segments=timeline_segments,
-            performance_trend=trend,
-            response_time_distribution=rt_dist_pct,
-            per_label=per_label_stats if per_label_stats else None,
-        )
+        acc = _Accumulator()
+        for row in csv.DictReader(file, restval=""):
+            acc.add(
+                elapsed=self._safe_int(row.get("elapsed")),
+                label=self._safe_str(row.get("label"), "Unnamed") or "Unnamed",
+                success=self._safe_str(row.get("success"), "true").lower() == "true",
+                code=self._safe_str(row.get("responseCode")),
+                message=self._safe_str(row.get("responseMessage")),
+                received=self._safe_int(row.get("bytes")),
+                sent=self._safe_int(row.get("sentBytes")),
+                ts=self._safe_int(row.get("timeStamp")),
+            )
+        return acc.summary(self) if acc.total else self._empty_summary()
 
     def _parse_xml_jtl(self, file) -> DetailedTestSummary:
-        """解析XML格式的JTL（简化版，先转CSV逻辑处理）"""
+        """解析XML格式的JTL；流式读取，处理完的元素立即释放。"""
         import xml.etree.ElementTree as ET
-        
-        tree = ET.parse(file)
-        root = tree.getroot()
-        
-        response_times = []
-        errors = 0
-        total = 0
-        received_bytes_total = 0
-        sent_bytes_total = 0
-        timed_samples = []
 
-        error_details = defaultdict(lambda: {"count": 0, "messages": []})
-        rt_distribution = {"0-100ms": 0, "100-300ms": 0, "300-500ms": 0,
-                          "500ms-1s": 0, "1s-3s": 0, "3s-5s": 0, ">5s": 0}
-        per_label_data = defaultdict(lambda: {
-            "response_times": [], "errors": 0, "count": 0,
-            "bytes_received": 0, "bytes_sent": 0,
-        })
-
-
-        for sample in root.iter():
+        acc = _Accumulator()
+        for _, sample in ET.iterparse(file, events=("end",)):
             if sample.tag not in {"sample", "httpSample", "sampleResult"}:
                 continue
-            total += 1
-            try:
-                label = sample.get("lb", "") or "Unnamed"
-                elapsed = int(sample.get("t", 0))
-                response_times.append(elapsed)
-
-                # Per-label tracking
-                per_label_data[label]["response_times"].append(elapsed)
-                per_label_data[label]["count"] += 1
-                
-                if elapsed < 100:
-                    rt_distribution["0-100ms"] += 1
-                elif elapsed < 300:
-                    rt_distribution["100-300ms"] += 1
-                elif elapsed < 500:
-                    rt_distribution["300-500ms"] += 1
-                elif elapsed < 1000:
-                    rt_distribution["500ms-1s"] += 1
-                elif elapsed < 3000:
-                    rt_distribution["1s-3s"] += 1
-                elif elapsed < 5000:
-                    rt_distribution["3s-5s"] += 1
-                else:
-                    rt_distribution[">5s"] += 1
-                
-                success = sample.get("s", "true") == "true"
-                response_code = sample.get("rc", "")
-                response_message = sample.get("rm", "")
-                
-                if not success:
-                    errors += 1
-                    per_label_data[label]["errors"] += 1
-                    error_key = f"{response_code}: {response_message}" if response_code else response_message
-                    if not error_key or error_key == ": ":
-                        error_key = "Unknown Error"
-                    error_details[error_key]["count"] += 1
-                    if len(error_details[error_key]["messages"]) < 3:
-                        error_details[error_key]["messages"].append(response_message or "No message")
-
-                bytes_received = int(sample.get("by", 0) or 0)
-                received_bytes_total += bytes_received
-                per_label_data[label]["bytes_received"] += bytes_received
-
-                sent_bytes = int(sample.get("sb", 0) or 0)
-                sent_bytes_total += sent_bytes
-                per_label_data[label]["bytes_sent"] += sent_bytes
-                
-                ts = int(sample.get("ts", 0))
-                if ts > 0:
-                    timed_samples.append((ts, elapsed, bytes_received, success))
-
-            except (ValueError, KeyError):
-                continue
-        
-        if total == 0:
-            return self._empty_summary()
-        
-        response_times.sort()
-        duration_seconds, time_bucket_data = self._timing_metrics(timed_samples)
-        
-        timeline_segments = []
-        for bucket_key in sorted(
-            (k for k in time_bucket_data.keys() if k and "-" in k),
-            key=self._bucket_sort_key,
-        ):
-            bucket = time_bucket_data[bucket_key]
-            rts = bucket["response_times"]
-            if rts:
-                timeline_segments.append(TimelineSegment(
-                    time_range=bucket_key,
-                    avg_response_time=round(sum(rts) / len(rts), 2),
-                    max_response_time=max(rts),
-                    throughput=round(bucket["count"] / bucket["duration"], 2),
-                    error_rate=round(bucket["errors"] / bucket["count"] * 100, 2) if bucket["count"] > 0 else 0,
-                    request_count=bucket["count"]
-                ))
-        
-        error_list = []
-        for error_key, data in sorted(error_details.items(), key=lambda x: x[1]["count"], reverse=True)[:10]:
-            error_list.append(ErrorDetail(
-                error_type=error_key[:100],
-                count=data["count"],
-                percentage=round(data["count"] / total * 100, 2),
-                sample_messages=data["messages"][:3]
-            ))
-        
-        trend = self._analyze_trend(timeline_segments)
-        rt_dist_pct = {k: round(v / total * 100, 2) for k, v in rt_distribution.items() if v > 0}
-
-        # Per-label statistics
-        per_label_stats = {}
-        for lbl, data in per_label_data.items():
-            if data["count"] == 0:
-                continue
-            rts = sorted(data["response_times"])
-            per_label_stats[lbl] = {
-                "count": data["count"],
-                "avg_response_time": round(sum(rts) / len(rts), 2),
-                "min_response_time": rts[0],
-                "max_response_time": rts[-1],
-                "p95_response_time": round(self._percentile(rts, 0.95), 2),
-                "p99_response_time": round(self._percentile(rts, 0.99), 2),
-                "error_rate": round(data["errors"] / data["count"] * 100, 2),
-                "throughput": round(data["count"] / duration_seconds, 2),
-                "bytes_per_sec": round(data["bytes_received"] / duration_seconds, 2),
-            }
-
-        p50_x = round(self._percentile(response_times, 0.5), 2)
-        p90_x = round(self._percentile(response_times, 0.9), 2)
-        p95_x = round(self._percentile(response_times, 0.95), 2)
-        p99_x = round(self._percentile(response_times, 0.99), 2)
-
-        return DetailedTestSummary(
-            total_requests=total,
-            avg_response_time=round(sum(response_times) / len(response_times), 2),
-            min_response_time=response_times[0] if response_times else 0,
-            max_response_time=response_times[-1] if response_times else 0,
-            p95_response_time=p95_x,
-            p99_response_time=p99_x,
-            error_rate=round(errors / total * 100, 2),
-            throughput=round(total / duration_seconds, 2),
-            received_bytes_per_sec=round(received_bytes_total / duration_seconds, 2),
-            sent_bytes_per_sec=round(sent_bytes_total / duration_seconds, 2),
-            percentiles={
-                "p50": p50_x, "p90": p90_x, "p95": p95_x, "p99": p99_x,
-            },
-            error_details=error_list,
-            timeline_segments=timeline_segments,
-            performance_trend=trend,
-            response_time_distribution=rt_dist_pct,
-            per_label=per_label_stats if per_label_stats else None,
-        )
+            acc.add(
+                elapsed=self._safe_int(sample.get("t")),
+                label=sample.get("lb", "") or "Unnamed",
+                success=sample.get("s", "true") == "true",
+                code=sample.get("rc", ""),
+                message=sample.get("rm", ""),
+                received=self._safe_int(sample.get("by")),
+                sent=self._safe_int(sample.get("sb")),
+                ts=self._safe_int(sample.get("ts")),
+            )
+            sample.clear()
+        return acc.summary(self) if acc.total else self._empty_summary()
 
     def _analyze_trend(self, segments: list) -> Optional[PerformanceTrend]:
         """分析性能趋势"""
@@ -461,6 +153,32 @@ class ReportParser:
                 desc += f"，但存在 {second_half_err:.1f}% 的持续错误率"
         
         return PerformanceTrend(trend_direction=trend, description=desc)
+
+    @staticmethod
+    def _histogram_percentiles(histogram: Counter, count: int, points=(0.5, 0.9, 0.95, 0.99)) -> list:
+        """Exact linear-interpolated percentiles from an integer-millisecond histogram."""
+        if not count:
+            return [0 for _ in points]
+        wanted = {}
+        for p in points:
+            k = (count - 1) * p
+            wanted.setdefault(int(k), None)
+            wanted.setdefault(min(int(k) + 1, count - 1), None)
+        targets = sorted(wanted)
+        seen, index = 0, 0
+        for value in sorted(histogram):
+            seen += histogram[value]
+            while index < len(targets) and targets[index] < seen:
+                wanted[targets[index]] = value
+                index += 1
+            if index == len(targets):
+                break
+        result = []
+        for p in points:
+            k = (count - 1) * p
+            low, high = int(k), min(int(k) + 1, count - 1)
+            result.append(wanted[low] if low == high else wanted[low] * (high - k) + wanted[high] * (k - low))
+        return result
 
     def _percentile(self, sorted_data: list, p: float) -> float:
         """计算百分位数"""
@@ -666,3 +384,126 @@ class ReportParser:
             stream.seek(max(0, stream.tell() - 65536))
             text = stream.read(65536).decode('utf-8', errors='replace')
         return ''.join(text.splitlines(keepends=True)[-tail_lines:])
+
+
+_RT_BANDS = (("0-100ms", 100), ("100-300ms", 300), ("300-500ms", 500), ("500ms-1s", 1000),
+             ("1s-3s", 3000), ("3s-5s", 5000), (">5s", None))
+
+
+class _Accumulator:
+    """Streaming JTL aggregation shared by the CSV and XML readers.
+
+    Response times are integer milliseconds, so percentiles come exactly from
+    histograms whose size is the number of distinct values, not samples. Only
+    timeline inputs are kept per sample, in compact typed arrays.
+    """
+
+    def __init__(self):
+        self.total = self.errors = self.received = self.sent = 0
+        self.elapsed_sum = 0
+        self.histogram = Counter()
+        self.bands = dict.fromkeys((name for name, _ in _RT_BANDS), 0)
+        self.labels = {}
+        self.error_details = defaultdict(lambda: {"count": 0, "messages": []})
+        self.ts, self.elapsed, self.ok = array("q"), array("q"), array("b")
+
+    def add(self, *, elapsed, label, success, code, message, received, sent, ts):
+        self.total += 1
+        self.elapsed_sum += elapsed
+        self.histogram[elapsed] += 1
+        for name, limit in _RT_BANDS:
+            if limit is None or elapsed < limit:
+                self.bands[name] += 1
+                break
+        stats = self.labels.get(label)
+        if stats is None:
+            stats = self.labels[label] = {"count": 0, "errors": 0, "sum": 0, "received": 0, "histogram": Counter()}
+        stats["count"] += 1
+        stats["sum"] += elapsed
+        stats["received"] += received
+        stats["histogram"][elapsed] += 1
+        if not success:
+            self.errors += 1
+            stats["errors"] += 1
+            key = f"{code}: {message}" if code else message
+            if not key or key == ": ":
+                key = "Unknown Error"
+            detail = self.error_details[key]
+            detail["count"] += 1
+            if len(detail["messages"]) < 3:
+                detail["messages"].append(message or "No message")
+        self.received += received
+        self.sent += sent
+        if ts > 0:
+            self.ts.append(ts)
+            self.elapsed.append(elapsed)
+            self.ok.append(1 if success else 0)
+
+    def _timeline(self):
+        """Use the earliest start and latest end, independent of row order."""
+        if not self.ts:
+            return 1.0, []
+        first = min(self.ts)
+        last_end = max(t + max(e, 0) for t, e in zip(self.ts, self.elapsed))
+        duration = max((last_end - first) / 1000.0, 0.001)
+        buckets = {}
+        for t, e, ok in zip(self.ts, self.elapsed, self.ok):
+            index = (t - first) // 30000
+            bucket = buckets.get(index)
+            if bucket is None:
+                bucket = buckets[index] = [0, 0, 0, 0]  # count, sum, max, errors
+            bucket[0] += 1
+            bucket[1] += e
+            bucket[2] = max(bucket[2], e)
+            bucket[3] += 0 if ok else 1
+        segments = []
+        for index in sorted(buckets):
+            count, total, peak, errors = buckets[index]
+            start = index * 30
+            window = max(min(30.0, duration - start), 0.001)  # Tail buckets use their observed duration
+            segments.append(TimelineSegment(
+                time_range=f"{start}-{start + 30}s", avg_response_time=round(total / count, 2),
+                max_response_time=peak, throughput=round(count / window, 2),
+                error_rate=round(errors / count * 100, 2), request_count=count))
+        return duration, segments
+
+    def summary(self, parser) -> DetailedTestSummary:
+        duration, segments = self._timeline()
+        per_label = {}
+        for label, stats in self.labels.items():
+            p90, p95, p99 = parser._histogram_percentiles(stats["histogram"], stats["count"], (0.9, 0.95, 0.99))
+            per_label[label] = {
+                "count": stats["count"],
+                "avg_response_time": round(stats["sum"] / stats["count"], 2),
+                "min_response_time": min(stats["histogram"]),
+                "max_response_time": max(stats["histogram"]),
+                "p90_response_time": round(p90, 2),
+                "p95_response_time": round(p95, 2),
+                "p99_response_time": round(p99, 2),
+                "error_rate": round(stats["errors"] / stats["count"] * 100, 2),
+                "throughput": round(stats["count"] / duration, 2),
+                "bytes_per_sec": round(stats["received"] / duration, 2),
+            }
+        p50, p90, p95, p99 = (round(v, 2) for v in parser._histogram_percentiles(self.histogram, self.total))
+        errors = [ErrorDetail(error_type=key[:100], count=data["count"],
+                              percentage=round(data["count"] / self.total * 100, 2),
+                              sample_messages=data["messages"][:3])
+                  for key, data in sorted(self.error_details.items(), key=lambda x: x[1]["count"], reverse=True)[:10]]
+        return DetailedTestSummary(
+            total_requests=self.total,
+            avg_response_time=round(self.elapsed_sum / self.total, 2),
+            min_response_time=min(self.histogram),
+            max_response_time=max(self.histogram),
+            p95_response_time=p95,
+            p99_response_time=p99,
+            error_rate=round(self.errors / self.total * 100, 2),
+            throughput=round(self.total / duration, 2),
+            received_bytes_per_sec=round(self.received / duration, 2),
+            sent_bytes_per_sec=round(self.sent / duration, 2),
+            percentiles={"p50": p50, "p90": p90, "p95": p95, "p99": p99},
+            error_details=errors,
+            timeline_segments=segments,
+            performance_trend=parser._analyze_trend(segments),
+            response_time_distribution={k: round(v / self.total * 100, 2) for k, v in self.bands.items() if v > 0},
+            per_label=per_label or None,
+        )

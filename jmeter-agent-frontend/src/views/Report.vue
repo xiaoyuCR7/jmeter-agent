@@ -17,6 +17,8 @@
         </div>
       </el-card>
 
+      <EvidencePanel :evidence="report.evidence" :sla-result="report.sla_result" :project-id="reportProjectId" />
+
       <el-card class="compare-card" v-if="comparisonEnabled">
         <template #header>
           <div class="card-header-flex">
@@ -433,6 +435,7 @@ import { BarChart, LineChart } from 'echarts/charts'
 import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { api } from '@/api'
+import EvidencePanel from '@/components/EvidencePanel.vue'
 import { useI18n } from '@/composables/useI18n'
 import { Warning, CircleCheck } from '@element-plus/icons-vue'
 
@@ -443,6 +446,7 @@ const { t } = useI18n()
 const route = useRoute()
 const loading = ref(false)
 const report = ref<any>(null)
+const reportProjectId = computed(() => report.value?.project_id || 'default')
 const dashboardData = ref<any>(null)
 const anomalies = ref<any>(null)
 const comparisonEnabled = ref(true)
