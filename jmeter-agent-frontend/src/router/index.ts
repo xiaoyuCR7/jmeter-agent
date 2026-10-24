@@ -49,12 +49,6 @@ const router = createRouter({
           meta: { titleKey: 'route.executions' }
         },
         {
-          path: 'schedules',
-          name: 'Schedules',
-          component: () => import('@/views/Schedules.vue'),
-          meta: { titleKey: 'route.schedules' }
-        },
-        {
           path: 'baselines',
           name: 'Baselines',
           component: () => import('@/views/Baselines.vue'),
@@ -71,12 +65,6 @@ const router = createRouter({
           name: 'AIChat',
           component: () => import('@/views/AIChat.vue'),
           meta: { titleKey: 'route.aiChat' }
-        },
-        {
-          path: 'autotune',
-          name: 'AutoTune',
-          component: () => import('@/views/AutoTune.vue'),
-          meta: { titleKey: 'route.autoTune' }
         },
         {
           path: 'import',

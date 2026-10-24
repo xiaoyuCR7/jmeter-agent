@@ -34,15 +34,6 @@ it('registered and legacy Agent requests preserve their explicit JSON contract',
   }
 })
 
-it('receipt lookup encodes identity and does not submit another analysis', () => {
-  const source = readFileSync(new URL('../src/api/index.ts', import.meta.url), 'utf8')
-  const instance = { get: vi.fn(), post: vi.fn() }
-  const { api } = selected(source, ['api'], { instance })
-  api.getAnalysisReceipt('key/other')
-  expect(instance.get).toHaveBeenCalledWith('/agent/analysis-requests/key%2Fother')
-  expect(instance.post).not.toHaveBeenCalled()
-})
-
 it('CSV preview maps the response columns and row arrays to table objects', async () => {
   const source = readFileSync(new URL('../src/views/TestCaseEditor.vue', import.meta.url), 'utf8').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]
   const context = { api: { previewCSV: vi.fn().mockResolvedValue({ data: { columns: ['name', 'age'], rows: [['Alice', '3']] } }) },
@@ -51,15 +42,6 @@ it('CSV preview maps the response columns and row arrays to table objects', asyn
   await selected(source, ['previewCSV'], context).previewCSV()
   expect(context.csvPreviewColumns.value).toEqual(['name', 'age'])
   expect(context.csvPreviewData.value).toEqual([{ name: 'Alice', age: '3' }])
-})
-
-it('drift failure does not present a healthy result', async () => {
-  const source = readFileSync(new URL('../src/views/Report.vue', import.meta.url), 'utf8').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)![1]
-  const context = { api: { detectDrift: vi.fn().mockRejectedValue(new Error('fixture')) },
-    report: { value: { execution_id: 'run' } }, driftResult: { value: null }, ElMessage: { error: vi.fn() }, t: (s: string) => s }
-  await selected(source, ['detectDrift'], context).detectDrift()
-  expect(context.driftResult.value).toBe(null)
-  expect(context.ElMessage.error).toHaveBeenCalledOnce()
 })
 
 it.each(['spike', 'ramp_up'])('unsupported %s template is blocked before any generation call', async kind => {

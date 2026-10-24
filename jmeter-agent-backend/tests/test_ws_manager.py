@@ -34,48 +34,6 @@ async def test_broadcast_does_not_hold_global_lock_while_sending():
 
 
 @pytest.mark.asyncio
-async def test_concurrent_connect_recovers_when_first_cross_worker_subscribe_fails(monkeypatch):
-    manager = wsmod.WSManager()
-    monkeypatch.setattr(manager, '_authorized', AsyncMock(return_value=True))
-    first_entered = asyncio.Event()
-    release_first = asyncio.Event()
-
-    class Bus:
-        enabled = True
-
-        def __init__(self):
-            self.subscribe_calls = 0
-
-        async def subscribe(self, execution_id):
-            self.subscribe_calls += 1
-            if self.subscribe_calls == 1:
-                first_entered.set()
-                await release_first.wait()
-                raise RuntimeError('temporary coordination failure')
-
-        async def unsubscribe(self, execution_id):
-            return None
-
-        async def close(self):
-            return None
-
-    manager._event_bus = Bus()
-    first, second = AsyncMock(), AsyncMock()
-    first_connect = asyncio.create_task(manager.connect('run', first))
-    await first_entered.wait()
-    second_connect = asyncio.create_task(manager.connect('run', second))
-    await asyncio.sleep(0)
-    release_first.set()
-    outcomes = await asyncio.gather(first_connect, second_connect, return_exceptions=True)
-
-    assert isinstance(outcomes[0], RuntimeError)
-    assert outcomes[1] is None
-    assert manager._event_bus.subscribe_calls == 2
-    assert manager._channels['run'] == {second}
-    await manager.disconnect('run', second)
-
-
-@pytest.mark.asyncio
 async def test_manager_background_tasks_restart_after_stop():
     manager = wsmod.WSManager()
     manager.start()

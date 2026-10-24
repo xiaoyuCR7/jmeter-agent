@@ -605,28 +605,6 @@ class TestSearchIsolation:
         archiver.archive_analysis_conclusion.assert_not_called()
         archiver.archive_raw_report.assert_not_called()
 
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize('outcome', ['saved', 'skipped', 'missing_id', 'exception'])
-    async def test_raw_report_archival_has_receipt_and_keeps_previous_results(self, store, monkeypatch, outcome):
-        from unittest.mock import AsyncMock, Mock
-        import importlib
-        from app.models.schemas import FactSheet, StructuredAnalysis
-        from app.services.jmeter.report_parser import ReportParser
-        module = importlib.import_module('app.services.ai.rag.archiver')
-        summary = ReportParser()._empty_summary()
-        summary.total_requests = 1 if outcome == 'skipped' else 100
-        fact = FactSheet(execution_id='source', module='api', context_scope='scope',
-                         jtl_sha256='digest', jtl_path='evidence', raw_summary=summary)
-        monkeypatch.setattr(module.fact_ledger, 'save', AsyncMock(return_value=True))
-        archiver = module.RAGArchiver(store)
-        archiver.archive_analysis_conclusion = Mock(return_value='conclusion-id')
-        if outcome != 'skipped':
-            archiver.archive_raw_report = Mock(return_value='raw-id' if outcome == 'saved' else None,
-                side_effect=OSError('fixture disk failure') if outcome == 'exception' else None)
-        result = await archiver.archive_analysis_result(StructuredAnalysis(overall_assessment='assessment'), fact)
-        assert result['fact_archived'] and result['conclusion_archived'] == 'conclusion-id'
-        assert result['raw_report_archived'] == ('raw-id' if outcome == 'saved' else None)
-        assert bool(result['errors']) is (outcome in ('missing_id', 'exception'))
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize('write_result', [None, OSError('fixture disk failure')])

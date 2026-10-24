@@ -30,10 +30,6 @@
           <el-icon><VideoPlay /></el-icon>
           <span>{{ t('layout.nav.executions') }}</span>
         </el-menu-item>
-        <el-menu-item index="/schedules">
-          <el-icon><Clock /></el-icon>
-          <span>{{ t('layout.nav.schedules') }}</span>
-        </el-menu-item>
         <el-menu-item index="/baselines">
           <el-icon><Aim /></el-icon>
           <span>{{ t('layout.nav.baselines') }}</span>
@@ -41,10 +37,6 @@
         <el-menu-item index="/analysis-reports">
           <el-icon><DataAnalysis /></el-icon>
           <span>{{ t('layout.nav.analysisReports') }}</span>
-        </el-menu-item>
-        <el-menu-item index="/autotune">
-          <el-icon><MagicStick /></el-icon>
-          <span>{{ t('layout.nav.autoTune') }}</span>
         </el-menu-item>
         <el-menu-item index="/import">
           <el-icon><Upload /></el-icon>
@@ -112,7 +104,7 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { api } from '@/api'
 import ToolConfirmations from '@/components/ToolConfirmations.vue'
-import { ArrowLeft, Menu, Connection, Document, VideoPlay, DataAnalysis, MagicStick, Upload, ChatDotRound, Setting, Clock, Aim } from '@element-plus/icons-vue'
+import { ArrowLeft, Menu, Connection, Document, VideoPlay, DataAnalysis, Upload, ChatDotRound, Setting, Aim } from '@element-plus/icons-vue'
 import { useI18n } from '@/composables/useI18n'
 
 const route = useRoute()

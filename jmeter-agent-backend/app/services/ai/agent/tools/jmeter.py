@@ -6,7 +6,6 @@ import asyncio
 import logging
 
 from app.core.config import settings
-from app.services import project_scope
 from app.services.execution_lifecycle import execution_lifecycle
 from app.services.jmeter.report_parser import ReportParser
 from app.services.jmeter.test_scheduler import TestScheduler, SchedulerDecision
@@ -156,18 +155,15 @@ async def cancel_execution(execution_id: str) -> dict:
 
 async def list_report_dir() -> dict:
     """List all test execution reports."""
-    project_scope.require_path(settings.REPORTS_DIR, allow_root_listing=True)
     if not os.path.exists(settings.REPORTS_DIR):
         return {"reports": []}
 
     reports = []
     for item in os.listdir(settings.REPORTS_DIR):
         item_path = os.path.join(settings.REPORTS_DIR, item)
-        if not project_scope.can_path(item_path):
-            continue
         if os.path.isdir(item_path):
             jtl_path = os.path.join(item_path, "result.jtl")
-            has_jtl = project_scope.can_path(jtl_path) and os.path.exists(jtl_path)
+            has_jtl = os.path.exists(jtl_path)
             reports.append({
                 "execution_id": item,
                 "has_jtl": has_jtl,

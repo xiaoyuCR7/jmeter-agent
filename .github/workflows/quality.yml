@@ -41,8 +41,6 @@ jobs:
   backend-portable:
     needs: dependency-lock
     timeout-minutes: 25
-    # macOS is not supported: coordination verifies local filesystems and process
-    # identity only on Windows and Linux.
     strategy:
       fail-fast: false
       matrix:
@@ -71,28 +69,7 @@ jobs:
       - name: Check supported-Python syntax
         run: python -m compileall -q app
       - name: Run portable backend suite
-        run: python -m pytest tests -m "not requires_patched_sqlite" -q
-
-  backend-coordination:
-    needs: dependency-lock
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        working-directory: jmeter-agent-backend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.13'
-          cache: pip
-          cache-dependency-path: jmeter-agent-backend/requirements-dev.txt
-      - name: Install exact dependencies and patched SQLite binding
-        run: |
-          python -m pip install -r requirements-dev.txt
-          python -m pip install pysqlite3==0.6.1
-      - name: Run complete backend suite with verified SQLite
-        run: python tests/run_with_patched_sqlite.py tests -q
+        run: python -m pytest tests -q
 
   frontend:
     runs-on: ubuntu-latest

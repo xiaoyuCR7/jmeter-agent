@@ -22,29 +22,18 @@ DEFAULT_MAX_TOKENS = 8000  # Conservative context window for embed + response
 def managed_request(method):
     @wraps(method)
     async def call(self, *args, **kwargs):
-        from app.services.project_scope import refresh_scope
-        await refresh_scope()
         async with self._operation():
-            from app.services.ai.operation_runtime import effect_boundary
-            with effect_boundary():
-                result = await method(self, *args, **kwargs)
-            await refresh_scope()
-            return result
+            return await method(self, *args, **kwargs)
     return call
 
 
 def managed_stream(method):
     @wraps(method)
     async def stream(self, *args, **kwargs):
-        from app.services.project_scope import refresh_scope, recheck_scope
-        await refresh_scope()
         async with self._operation():
-            from app.services.ai.operation_runtime import effect_boundary
-            with effect_boundary():
-                async with aclosing(method(self, *args, **kwargs)) as source:
-                    async for chunk in source:
-                        await recheck_scope()
-                        yield chunk
+            async with aclosing(method(self, *args, **kwargs)) as source:
+                async for chunk in source:
+                    yield chunk
     return stream
 
 

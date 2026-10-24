@@ -10,12 +10,15 @@ import logging
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import Response
 import anyio
-from app.services.authenticated_stream import AuthenticatedStreamingResponse as StreamingResponse
+from fastapi.responses import StreamingResponse
 
 from app.services.mcp_server import mcp_server, MCPTransportError
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["mcp"])
+
+# Single local user: every MCP session has the same owner.
+LOCAL_OWNER = "local"
 
 
 class _MCPStreamingResponse(StreamingResponse):
@@ -79,8 +82,7 @@ async def mcp_status():
 @router.post("/mcp/messages")
 async def mcp_messages(request: Request):
     """Accept one session message. Missing sessions are not a custom HTTP transport."""
-    principal = _principal(request)
-    owner = principal.username
+    owner = LOCAL_OWNER
     session_id = request.query_params.get("session_id")
     if not session_id:
         raise HTTPException(400, "Connect to /api/v1/mcp/sse first")
@@ -90,47 +92,20 @@ async def mcp_messages(request: Request):
             body.extend(chunk)
             if len(body) > 1024 * 1024:
                 raise HTTPException(413, "MCP message exceeds 1 MiB")
-        try:
-            session = mcp_server.get_session(session_id, owner)
-        except MCPTransportError as local_error:
-            from app.services.mcp_mailbox import mcp_mailbox
-            if local_error.status_code != 404 or not mcp_mailbox.enabled:
-                raise
-            await mcp_mailbox.submit(session_id, principal, bytes(body))
-        else:
-            mcp_server.submit(session, bytes(body))
+        session = mcp_server.get_session(session_id, owner)
+        mcp_server.submit(session, bytes(body))
     except MCPTransportError as error:
         raise HTTPException(error.status_code, error.detail) from error
     return Response(status_code=202)
 
 
-def _principal(request: Request):
-    user = getattr(request.state, "auth_user", None)
-    if user is None:
-        raise HTTPException(401, "Authentication required")
-    return user
-
-
-def _owner(request: Request) -> str:
-    return _principal(request).username
-
-
 @router.get("/mcp/sse")
 async def mcp_sse(request: Request):
     """Each stream owns its queue and pending tasks; disconnect revokes its POST URI."""
-    principal = _principal(request)
-    owner = principal.username
     server = mcp_server
     try:
         # Admission must happen before response headers, so limits return HTTP 429.
-        session = server.create_session(owner)
-        from app.services.mcp_mailbox import mcp_mailbox
-        if mcp_mailbox.enabled:
-            try:
-                await mcp_mailbox.register(session, principal)
-            except MCPTransportError as error:
-                await server.close_session(session)
-                raise HTTPException(error.status_code, error.detail) from error
+        session = server.create_session(LOCAL_OWNER)
     except MCPTransportError as error:
         raise HTTPException(error.status_code, error.detail) from error
 
@@ -144,10 +119,7 @@ async def mcp_sse(request: Request):
                 if await request.is_disconnected():
                     break
                 try:
-                    if session.mailbox is not None:
-                        await session.mailbox.drain(session)
-                    timeout = .25 if session.mailbox is not None else 15.0
-                    response = await asyncio.wait_for(session.queue.get(), timeout=timeout)
+                    response = await asyncio.wait_for(session.queue.get(), timeout=15.0)
                     yield f"event: message\ndata: {json.dumps(response, ensure_ascii=False)}\n\n"
                 except asyncio.TimeoutError:
                     if asyncio.get_running_loop().time() - last_heartbeat >= 15:

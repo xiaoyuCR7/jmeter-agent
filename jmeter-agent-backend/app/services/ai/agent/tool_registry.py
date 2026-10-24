@@ -140,20 +140,13 @@ class ToolRegistry:
                 return ToolResult(success=False, tool_name=name, error=error,
                                   error_category=ErrorCategory.INPUT_ERROR)
             args = json.loads(json.dumps(args, allow_nan=False))
-            from app.services.project_scope import refresh_scope
-            await refresh_scope()
             if tool.require_confirmation:
                 from app.services.confirmations import confirmations
-                from app.services.security_context import current_principal
-                if not await confirmations.request(current_principal.get(), name, args):
+                if not await confirmations.request(name, args):
                     return ToolResult(success=False, tool_name=name,
                                       error="User confirmation denied, expired, or unavailable; do not retry automatically",
                                       error_category=ErrorCategory.CANCELLED)
-                await refresh_scope()
-            from app.services.ai.operation_runtime import effect_boundary
-            with effect_boundary():
-                result = await tool.handler(**args)
-            await refresh_scope()
+            result = await tool.handler(**args)
             duration = (time.time() - start) * 1000
 
             # Explicit business failures must not become successful observations.

@@ -11,11 +11,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File, Query, Depends
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
-from app.services import project_scope
-from app.services.auth import require_auth, UserInfo
 
-from app.api.project_boundary import project_request_guard
-router = APIRouter(tags=["test-data"], dependencies=[Depends(project_request_guard)])
+router = APIRouter(tags=["test-data"])
 logger = logging.getLogger(__name__)
 
 TEST_DATA_DIR = os.path.join(settings.BASE_DIR, "test_data")
@@ -33,7 +30,6 @@ def _data_path(path: str, *, write: bool = False) -> str:
         allowed = False
     if not allowed:
         raise HTTPException(status_code=403, detail="Access denied")
-    project_scope.require_path(target, write=write)
     return target
 
 
@@ -115,7 +111,6 @@ def _inspect_csv(filepath: str):
 async def upload_csv(
     file: UploadFile = File(..., description="CSV file for data-driven testing"),
     project_id: str = "default",
-    user: UserInfo = Depends(require_auth),
 ):
     """Upload a CSV file for use in data-driven JMeter tests.
 
@@ -131,7 +126,6 @@ async def upload_csv(
         validate_id(project_id)
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied") from None
-    project_scope.require_project(project_id, write=True)
     project_dir = _data_path(os.path.join(TEST_DATA_DIR, project_id), write=True)
 
     # Sanitize filename
@@ -180,16 +174,12 @@ async def list_data_files(
     base_dir = TEST_DATA_DIR
 
     if project_id:
-        project_scope.require_project(project_id)
         search_dirs = [_data_path(os.path.join(base_dir, project_id))]
     else:
-        project_scope.require_path(base_dir, allow_root_listing=True)
         search_dirs = []
         if os.path.exists(base_dir):
             for item in os.listdir(base_dir):
                 item_path = os.path.join(base_dir, item)
-                if not project_scope.can_path(item_path):
-                    continue
                 if os.path.isdir(item_path):
                     try:
                         search_dirs.append(_data_path(item_path))
@@ -248,7 +238,6 @@ async def preview_csv(
 @router.delete("/data/files")
 async def delete_data_file(
     filepath: str = Query(..., description="Full path to the CSV file"),
-    user: UserInfo = Depends(require_auth),
 ):
     """Delete an uploaded CSV file."""
     filepath = _data_path(filepath, write=True)

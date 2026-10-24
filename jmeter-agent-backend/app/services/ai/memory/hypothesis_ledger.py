@@ -25,7 +25,6 @@ from app.models.schemas import (
 )
 from app.services.ai.memory.fact_ledger import fact_ledger
 from app.services.ai.memory.read_errors import ledger_read_boundary
-from app.services.project_scope import current_scope, require_execution, resource_project
 
 logger = logging.getLogger(__name__)
 
@@ -50,49 +49,6 @@ class HypothesisLedger:
         if self._db_lock is None:
             self._db_lock = asyncio.Lock()
         return self._db_lock
-
-    @staticmethod
-    def _require_sources(source, verified=None, refuted=None, *, write=False):
-        require_execution(source, write=write)
-        project = resource_project('execution', source)
-        for reference in (verified, refuted):
-            if reference:
-                require_execution(reference)
-                if resource_project('execution', reference) != project:
-                    raise HTTPException(404, 'Hypothesis evidence not found')
-
-    @staticmethod
-    def _source_filter():
-        scope = current_scope()
-        if scope is None:
-            return '1 = 1', []
-        clauses, params = [], []
-        for project in scope.authorization.project_modes:
-            if not scope.authorization.allows(project, 'read'):
-                continue
-            identities = [identity for identity, record in scope.executions.items()
-                          if record['project_id'] == project]
-            if not identities:
-                continue
-            placeholders = ','.join('?' for _ in identities)
-            parts = [f'source_execution_id IN ({placeholders})']
-            params.extend(identities)
-            for field in ('verified_by_execution_id', 'refuted_by_execution_id'):
-                parts.append(f"(COALESCE({field}, '') = '' OR {field} IN ({placeholders}))")
-                params.extend(identities)
-            clauses.append('(' + ' AND '.join(parts) + ')')
-        return '(' + ' OR '.join(clauses) + ')' if clauses else '1 = 0', params
-
-    async def _authorize_existing(self, db, hypothesis_id, *, write=False):
-        if current_scope() is None:
-            return None
-        cursor = await db.execute(
-            'SELECT source_execution_id, verified_by_execution_id, refuted_by_execution_id '
-            'FROM hypotheses WHERE hypothesis_id = ?', (hypothesis_id,))
-        row = await cursor.fetchone()
-        if row:
-            self._require_sources(*row, write=write)
-        return row
 
     async def _get_db(self):
         """Return persistent aiosqlite connection."""
@@ -188,8 +144,6 @@ class HypothesisLedger:
         if_absent: bool = False,
     ) -> str:
         """Add a hypothesis; optionally preserve an existing ID without replacing it."""
-        self._require_sources(hypothesis.source_execution_id, hypothesis.verified_by_execution_id,
-                              hypothesis.refuted_by_execution_id, write=True)
         if not hypothesis.hypothesis_id:
             hypothesis.hypothesis_id = str(uuid.uuid4())[:8]
         hypothesis_id = hypothesis.hypothesis_id
@@ -210,8 +164,9 @@ class HypothesisLedger:
         async with self._get_lock():
             db = await self._get_db()
             try:
-                existing = await self._authorize_existing(db, hypothesis_id, write=True)
-                self._require_sources(values[1], values[12], values[13], write=True)
+                cursor = await db.execute(
+                    'SELECT source_execution_id FROM hypotheses WHERE hypothesis_id = ?', (hypothesis_id,))
+                existing = await cursor.fetchone()
                 if existing and existing[0] != values[1]:
                     raise HTTPException(403, 'Hypothesis source identity cannot be changed')
                 await db.execute(
@@ -246,15 +201,11 @@ class HypothesisLedger:
         expected_updated_at: Optional[datetime] = None,
     ) -> bool:
         """Update status; optional read-version guards reject stale decisions."""
-        current_scope()
         await self._ensure_table()
 
         async with self._get_lock():
             db = await self._get_db()
             try:
-                existing = await self._authorize_existing(db, hypothesis_id, write=True)
-                if existing:
-                    self._require_sources(existing[0], verified_by, refuted_by, write=True)
                 fields = ["status = ?", "updated_at = ?"]
                 params = [status.value, datetime.now().isoformat()]
 
@@ -315,7 +266,6 @@ class HypothesisLedger:
 
     async def get(self, hypothesis_id: str, *, strict: bool = False) -> Optional[Hypothesis]:
         """Get a single hypothesis by ID."""
-        condition, params = self._source_filter()
         with ledger_read_boundary(strict, 'hypothesis', 'get'):
             await self._ensure_table()
 
@@ -323,13 +273,11 @@ class HypothesisLedger:
                 db = await self._get_db()
                 try:
                     cursor = await db.execute(
-                        "SELECT * FROM hypotheses WHERE hypothesis_id = ? AND " + condition,
-                        (hypothesis_id, *params),
+                        "SELECT * FROM hypotheses WHERE hypothesis_id = ?",
+                        (hypothesis_id,),
                     )
                     row = await cursor.fetchone()
                     try:
-                        if row and current_scope() is not None:
-                            self._require_sources(row[1], row[12], row[13])
                         return self._row_to_hypothesis(row) if row else None
                     except (ValueError, TypeError) as error:
                         if not strict:
@@ -354,7 +302,6 @@ class HypothesisLedger:
         *, strict: bool = False,
     ) -> list[Hypothesis]:
         """List hypotheses for a module/version, optionally filtered by status."""
-        condition, source_params = self._source_filter()
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
             raise ValueError('limit must be a non-negative integer')
         if limit == 0 or (source_execution_ids is not None and not source_execution_ids):
@@ -365,8 +312,8 @@ class HypothesisLedger:
             async with self._get_lock():
                 db = await self._get_db()
                 try:
-                    query = "SELECT * FROM hypotheses WHERE module = ? AND " + condition
-                    params = [module, *source_params]
+                    query = "SELECT * FROM hypotheses WHERE module = ?"
+                    params = [module]
                     if version:
                         query += " AND version = ?"
                         params.append(version)
@@ -381,8 +328,6 @@ class HypothesisLedger:
                     async with db.execute(query, tuple(params)) as cursor:
                         async for row in cursor:
                             try:
-                                if current_scope() is not None:
-                                    self._require_sources(row[1], row[12], row[13])
                                 hyp = self._row_to_hypothesis(row)
                             except (ValueError, TypeError) as error:
                                 logger.warning('Skipping malformed hypothesis row: %s', type(error).__name__)
@@ -415,7 +360,6 @@ class HypothesisLedger:
         the new facts, but the goal is to keep the barrier high for confirming
         a hypothesis.
         """
-        require_execution(new_execution_id)
         read_options = {'strict': True} if strict else {}
         hyp = await self.get(hypothesis_id, **read_options)
         if not hyp or hyp.status != HypothesisStatus.UNTESTED or not hyp.testable_prediction:
@@ -516,7 +460,6 @@ class HypothesisLedger:
         *, strict: bool = False,
     ) -> list[Hypothesis]:
         """Evaluate all untested hypotheses for a module against a new execution."""
-        require_execution(new_execution_id)
         read_options = {'strict': True} if strict else {}
         untested = await self.list_for_module(module, status=HypothesisStatus.UNTESTED, **read_options)
         results = []
@@ -533,10 +476,6 @@ class HypothesisLedger:
         untested_limit: int = 5,
     ) -> str:
         """Format hypotheses into a prompt context, separating confirmed vs untested."""
-        current_scope()
-        for hypothesis in hypotheses:
-            HypothesisLedger._require_sources(hypothesis.source_execution_id,
-                hypothesis.verified_by_execution_id, hypothesis.refuted_by_execution_id)
         confirmed = [h for h in hypotheses if h.status == HypothesisStatus.CONFIRMED][:confirmed_limit]
         untested = [h for h in hypotheses if h.status == HypothesisStatus.UNTESTED][:untested_limit]
         refuted = [h for h in hypotheses if h.status == HypothesisStatus.REFUTED][:3]

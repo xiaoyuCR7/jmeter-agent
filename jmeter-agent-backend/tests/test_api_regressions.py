@@ -97,55 +97,6 @@ async def test_invalid_analysis_does_not_mark_report_complete(monkeypatch, tmp_p
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('startup_failure', [True, False])
-async def test_lifespan_cleans_owned_services_after_failure(monkeypatch, startup_failure):
-    import app.main as main
-    import app.core.config as config
-    import app.models.db as db
-    import app.services.auth as auth
-    from app.services.storage import store
-    from app.services.db_store import db_store
-    from app.services.scheduler import runner
-    from app.services.ws_manager import ws_manager
-    from app.services.execution_lifecycle import execution_lifecycle
-    from app.services.ai.adapters.factory import AIAdapterFactory
-    import app.services.ai.rag.store as rag
-    import app.api.mcp_routes as mcp
-    from app.services.ai import analysis_runtime as analysis_module
-    from app.services.ai import analysis_receipts as receipts_module
-    receipts = receipts_module.AnalysisReceipts()
-    monkeypatch.setattr(receipts_module, 'analysis_receipts', receipts)
-    resource = analysis_module.AnalysisRuntime(limit=1)
-    monkeypatch.setattr(analysis_module, 'analysis_runtime', resource)
-    monkeypatch.setattr(config, 'validate_deployment_security', lambda: None)
-    monkeypatch.setattr(config.settings, 'DEBUG', True)
-    for target, name in [(db, 'init_db'), (store, 'sync_from_dbstore'), (auth, 'ensure_default_admin'),
-                         (db_store, 'cleanup_expired_tokens'), (main.routes, 'ensure_default_project'),
-                         (runner, 'start'), (rag, '_preload_embedding_model')]:
-        monkeypatch.setattr(target, name, AsyncMock())
-    for name in ('scan_test_plans', 'scan_reports'):
-        monkeypatch.setattr(main.routes, name, lambda: None)
-    monkeypatch.setattr(ws_manager, 'start', lambda: None)
-    async def check_analysis_stopped():
-        assert not resource.accepting and resource.active_count == 0
-        assert not receipts.accepting and not receipts._active
-    stop, shutdown, close, ws_stop = AsyncMock(), AsyncMock(), AsyncMock(side_effect=check_analysis_stopped), AsyncMock()
-    monkeypatch.setattr(runner, 'stop', stop)
-    monkeypatch.setattr(ws_manager, 'stop', ws_stop)
-    monkeypatch.setattr(execution_lifecycle, 'shutdown', shutdown)
-    monkeypatch.setattr(AIAdapterFactory, 'close_all', close)
-    monkeypatch.setattr(mcp, 'init_mcp_server', AsyncMock(side_effect=RuntimeError('fixture startup') if startup_failure else None))
-    with pytest.raises(RuntimeError, match='fixture'):
-        async with main.lifespan(main.app):
-            raise RuntimeError('fixture serving')
-    stop.assert_awaited_once()
-    shutdown.assert_awaited_once()
-    close.assert_awaited_once()
-    assert not resource.accepting and resource.active_count == 0
-    assert not receipts.accepting and not receipts._active
-
-
-@pytest.mark.asyncio
 async def test_failed_execution_without_report_directory_is_readable(monkeypatch):
     from app.api import routes
     from app.models.schemas import TestExecutionInfo
@@ -182,7 +133,7 @@ async def test_csv_traversal_is_rejected(csv_root, operation):
         if operation == 'preview':
             await data_routes.preview_csv(path, rows=1)
         else:
-            await data_routes.delete_data_file(path, user=None)
+            await data_routes.delete_data_file(path)
     assert error.value.status_code == 403
     assert (csv_root.parent / 'outside.csv').exists()
 
@@ -192,7 +143,7 @@ async def test_csv_upload_cannot_escape_through_project_id(csv_root):
     from app.api import data_routes
     file = UploadFile(filename='test.csv', file=BytesIO(b'name\nvalue\n'))
     with pytest.raises(HTTPException) as error:
-        await data_routes.upload_csv(file, project_id='..', user=None)
+        await data_routes.upload_csv(file, project_id='..')
     assert error.value.status_code == 403
     assert not (csv_root.parent / 'test.csv').exists()
 

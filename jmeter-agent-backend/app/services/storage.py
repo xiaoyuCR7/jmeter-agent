@@ -15,7 +15,6 @@ from copy import deepcopy
 from typing import Dict, Any, Optional
 
 from fastapi import HTTPException
-from app.services.project_scope import current_scope, can_project, require_project
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +31,10 @@ class _ProjectView(MutableMapping):
                                          else getattr(value, 'project_id', None))
 
     def __getitem__(self, key):
-        value = self.records[key]
-        if not can_project(self._owner(key, value)):
-            raise KeyError(key)
-        return deepcopy(value)
+        return deepcopy(self.records[key])
 
     def __iter__(self):
-        return (key for key, value in tuple(self.records.items())
-                if can_project(self._owner(key, value)))
+        return iter(tuple(self.records))
 
     def __len__(self):
         return sum(1 for _ in self)
@@ -48,23 +43,20 @@ class _ProjectView(MutableMapping):
         owner = self._owner(key, value)
         if key in self.records:
             old_owner = self._owner(key, self.records[key])
-            require_project(old_owner, write=True)
             if old_owner != owner:
                 raise HTTPException(409, 'Resource project cannot be changed')
-        require_project(owner, write=True)
         self.records[key] = deepcopy(value)
         if self.on_change:
             self.on_change()
 
     def __delitem__(self, key):
-        require_project(self._owner(key, self.records[key]), write=True)
         del self.records[key]
         if self.on_change:
             self.on_change()
 
 
 def _view(records, *, projects=False, on_change=None):
-    return records if current_scope() is None else _ProjectView(records, projects, on_change)
+    return records if True else _ProjectView(records, projects, on_change)
 
 
 class SharedStore:
@@ -232,15 +224,13 @@ class SharedStore:
     async def refresh_if_stale(self, *, force=False):
         """Replace one complete snapshot; retry if a writer commits during loading."""
         from app.services.db_store import db_store
-        from app.services.project_scope import internal_scope
         for _ in range(3):
             revision = await self._database_revision()
             if not force and self._db_synced and revision == self._revision:
                 return False
-            with internal_scope():
-                projects = await self._all_pages(db_store.list_projects, 'projects')
-                plans = await self._all_pages(db_store.list_test_plans, 'test_plans')
-                executions = await self._all_pages(db_store.list_executions, 'executions')
+            projects = await self._all_pages(db_store.list_projects, 'projects')
+            plans = await self._all_pages(db_store.list_test_plans, 'test_plans')
+            executions = await self._all_pages(db_store.list_executions, 'executions')
             if await self._database_revision() != revision:
                 force = True
                 continue
@@ -263,10 +253,3 @@ class SharedStore:
 
 # Module-level singleton — import this everywhere
 store = SharedStore()
-
-
-async def refresh_business_cache():
-    """Refresh only when the optional cross-process runtime is configured."""
-    from app.services.ai.operation_runtime import agent_operations
-    if agent_operations.enabled:
-        await store.refresh_if_stale()

@@ -223,28 +223,6 @@ async def test_update_tool_preserves_dict_property_contract(jmx_file, monkeypatc
     assert any(n.get('properties', {}).get('ConstantTimer.delay') == '25' for n in nodes)
 
 
-@pytest.mark.asyncio
-async def test_autotune_modifies_real_parsed_properties(jmx_file, monkeypatch):
-    from app.services.ai.agents.autotune_agent import AutoTuneAgent, AutoTuneConfig
-    from app.services import execution_lifecycle
-
-    fake = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
-        report_dir=None, status=SimpleNamespace(value='failed'))))
-    monkeypatch.setattr(execution_lifecycle, 'execution_lifecycle', fake)
-    result = await AutoTuneAgent()._run_iteration(str(jmx_file),
-        {'concurrency': 9, 'ramp_up': 2, 'duration': 30, 'think_time': 20},
-        AutoTuneConfig(cooldown_between_runs=0), 1)
-    assert not (result.error or '').startswith('Failed to update JMX'), result.error
-    fake.execute.assert_awaited_once()
-    assert fake.execute.await_args.args[0] == str(jmx_file)
-    assert fake.execute.await_args.args[1].startswith('autotune_1_')
-    nodes = list(walk(parse_jmx(str(jmx_file))))
-    props = next(n['properties'] for n in nodes if n.get('testclass') == 'ThreadGroup')
-    assert props['ThreadGroup.num_threads'] == '9'
-    assert props['ThreadGroup.duration'] == '30'
-    assert any(n.get('properties', {}).get('ConstantTimer.delay') == '20' for n in nodes)
-
-
 def test_selfheal_reads_and_updates_dict_extractor_properties():
     from app.services.ai.agents.selfheal_agent import SelfHealAgent, ExtractionFix
 

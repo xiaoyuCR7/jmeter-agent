@@ -103,57 +103,6 @@ def registered_evidence(tmp_path, monkeypatch, sample_jtl):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('operation, strict', [('save', False), ('load', False), ('history', False),
-                                             ('rebuild', False), ('load', True), ('history', True)])
-async def test_analysis_admission_ledger_cancel_keeps_real_read_and_preserves_rows(
-        temp_ledger, sample_jtl, monkeypatch, operation, strict):
-    import threading
-    from app.services.ai.analysis_runtime import AnalysisRuntime
-    fact = temp_ledger.compute_from_jtl(sample_jtl, execution_id='registered', module='api')
-    assert await temp_ledger.save(fact)
-    original = fact.model_dump()
-    replacement = fact.model_copy(update={'total_requests': 99999})
-    entered, release = threading.Event(), threading.Event()
-    target = 'compute_from_jtl' if operation == 'rebuild' else '_jtl_hash'
-    calculate = getattr(temp_ledger, target)
-    def read(*args, **kwargs):
-        entered.set()
-        assert release.wait(10)
-        return calculate(*args, **kwargs)
-    resource = AnalysisRuntime(limit=1)
-    resource.start()
-    async def run():
-        lease = resource.try_acquire()
-        try:
-            with lease.activate():
-                if operation == 'save':
-                    return await temp_ledger.save(replacement)
-                if operation == 'load':
-                    return await temp_ledger.load('registered', **({'strict': True} if strict else {}))
-                if operation == 'history':
-                    return await temp_ledger.get_facts_for_module_version('api', **({'strict': True} if strict else {}))
-                return await temp_ledger.rebuild_fact('registered')
-        finally:
-            lease.close()
-    with monkeypatch.context() as patch:
-        patch.setattr(temp_ledger, target, read)
-        running = asyncio.create_task(run())
-        try:
-            assert await asyncio.to_thread(entered.wait, 5)
-            running.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await running
-            assert resource.active_count == resource.draining_count == 1
-            assert resource.try_acquire() is None
-        finally:
-            release.set()
-            await asyncio.gather(running, return_exceptions=True)
-            await asyncio.wait_for(resource.shutdown(), 5)
-    assert (await temp_ledger.load('registered')).model_dump() == original
-    assert resource.active_count == 0
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize('stream', [False, True])
 async def test_registered_analysis_end_to_end_jtl_to_scoped_persistence(registered_evidence, temp_ledger, tmp_path, monkeypatch, stream):
     import importlib

@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Optional
 
 from app.core.config import settings
-from app.services import project_scope
 from app.services.ai.agent.tool_registry import Tool
 from app.services.storage import store
 
@@ -53,12 +52,9 @@ async def create_project(name: str, description: str = "", base_url: str = "", h
         "environment_data": env.model_dump(),
         "created_at": now,
     })
-    await project_scope.refresh_scope()
-    project_scope.require_project(project_id, write=True)
 
     # Create project directory
     project_dir = os.path.join(settings.TEST_PLANS_DIR, project_id)
-    project_scope.require_path(project_dir, write=True)
     store.set_project(project_id, project)
     os.makedirs(project_dir, exist_ok=True)
 
@@ -75,8 +71,6 @@ async def list_projects() -> dict:
     """List all projects."""
     projects = []
     for pid, proj in store.projects.items():
-        if not project_scope.can_project(pid):
-            continue
         plan_count = len([p for p in store.test_plans.values() if getattr(p, 'project_id', '') == pid])
         projects.append({
             "id": pid,
@@ -86,17 +80,14 @@ async def list_projects() -> dict:
         })
 
     # Also scan filesystem
-    project_scope.require_path(settings.TEST_PLANS_DIR, allow_root_listing=True)
     if os.path.exists(settings.TEST_PLANS_DIR):
         for item in os.listdir(settings.TEST_PLANS_DIR):
             item_path = os.path.join(settings.TEST_PLANS_DIR, item)
-            if not project_scope.can_project(item) or not project_scope.can_path(item_path):
-                continue
             if os.path.isdir(item_path):
                 existing_ids = {p["id"] for p in projects}
                 if item not in existing_ids:
                     jmx_count = len([f for f in os.listdir(item_path)
-                                     if f.endswith(".jmx") and project_scope.can_path(os.path.join(item_path, f))])
+                                     if f.endswith(".jmx")])
                     projects.append({
                         "id": item,
                         "name": item,
@@ -113,7 +104,6 @@ async def get_project_info(project_id: str) -> dict:
     Args:
         project_id: Project ID.
     """
-    project_scope.require_project(project_id)
     if project_id in store.projects:
         proj = store.projects[project_id]
         return {
@@ -125,10 +115,9 @@ async def get_project_info(project_id: str) -> dict:
 
     # Check filesystem
     project_dir = os.path.join(settings.TEST_PLANS_DIR, project_id)
-    project_scope.require_path(project_dir)
     if os.path.isdir(project_dir):
         jmx_files = [f for f in os.listdir(project_dir)
-                     if f.endswith(".jmx") and project_scope.can_path(os.path.join(project_dir, f))]
+                     if f.endswith(".jmx")]
         return {
             "id": project_id,
             "name": project_id,
@@ -154,7 +143,6 @@ async def update_project_env(
         headers: New global headers.
         variables: New project variables.
     """
-    project_scope.require_project(project_id, write=True)
     if project_id not in store.projects:
         return {"error": f"Project not found: {project_id}"}
 
@@ -177,7 +165,6 @@ async def update_project_env(
         if persisted is None:
             raise LookupError(f'Project not registered: {project_id}')
         proj.storage_version = persisted.get('storage_version', proj.storage_version)
-        project_scope.require_project(project_id, write=True)
         store.set_project(project_id, proj)
 
     return {

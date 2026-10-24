@@ -18,22 +18,9 @@ from fastapi import HTTPException
 from app.core.config import settings
 from app.models.schemas import FactSheet, DetailedTestSummary
 from app.services.jmeter.report_parser import ReportParser
-from app.services.ai.analysis_runtime import run_analysis_sync
 from app.services.ai.memory.read_errors import ledger_read_boundary
-from app.services.project_scope import current_scope, require_execution, require_path
 
 logger = logging.getLogger(__name__)
-
-
-def _authorize_source(execution_id, jtl_path=None, *, write=False):
-    require_execution(execution_id, write=write)
-    scope = current_scope()
-    if jtl_path and scope is not None:
-        require_path(jtl_path)
-        report_dir = scope.executions[execution_id].get('report_dir')
-        expected = os.path.normcase(os.path.realpath(os.path.join(report_dir, 'result.jtl'))) if report_dir else None
-        if expected is None or os.path.normcase(os.path.realpath(jtl_path)) != expected:
-            raise HTTPException(404, 'Execution evidence not found')
 
 
 class FactLedger:
@@ -120,7 +107,6 @@ class FactLedger:
 
         This is the only sanctioned way to produce facts.
         """
-        _authorize_source(execution_id, jtl_path)
         if not os.path.exists(jtl_path):
             raise FileNotFoundError(f"JTL file not found: {jtl_path}")
 
@@ -149,7 +135,6 @@ class FactLedger:
         test_type: Optional[str] = None,
     ) -> FactSheet:
         """Compute a FactSheet from an already-parsed DetailedTestSummary."""
-        _authorize_source(execution_id, jtl_path)
         return FactSheet(
             execution_id=execution_id,
             module=module or "unknown",
@@ -178,7 +163,6 @@ class FactLedger:
     @staticmethod
     def _jtl_hash(jtl_path: str) -> str:
         """Compute a cheap content hash for the JTL file."""
-        require_path(jtl_path)
         if not os.path.exists(jtl_path):
             return ""
         h = hashlib.sha256()
@@ -189,7 +173,6 @@ class FactLedger:
 
     async def save(self, fact: FactSheet) -> bool:
         """Persist a FactSheet."""
-        _authorize_source(fact.execution_id, fact.jtl_path, write=True)
         # Freeze both indexed fields and nested JSON before the first suspension.
         values = {name: getattr(fact, name) for name in (
             'execution_id', 'module', 'version', 'test_type', 'jtl_path', 'schema_version')}
@@ -199,7 +182,7 @@ class FactLedger:
         await self._ensure_table()
 
         jtl_path = values['jtl_path']
-        jtl_hash = await run_analysis_sync(self._jtl_hash, jtl_path) if jtl_path else ""
+        jtl_hash = await asyncio.to_thread(self._jtl_hash, jtl_path) if jtl_path else ""
         if jtl_path and (not jtl_hash or (expected_hash and expected_hash != jtl_hash)):
             logger.error('Refusing fact save: source JTL changed or is unavailable')
             return False
@@ -208,7 +191,6 @@ class FactLedger:
         async with self._get_lock():
             db = await self._get_db()
             try:
-                _authorize_source(values['execution_id'], jtl_path, write=True)
                 await db.execute(
                     """INSERT OR REPLACE INTO fact_sheets
                        (execution_id, module, version, test_type, jtl_path, jtl_hash,
@@ -233,7 +215,6 @@ class FactLedger:
 
     async def load(self, execution_id: str, *, strict: bool = False) -> Optional[FactSheet]:
         """Load a persisted FactSheet."""
-        require_execution(execution_id)
         with ledger_read_boundary(strict, 'fact', 'load'):
             await self._ensure_table()
 
@@ -265,7 +246,6 @@ class FactLedger:
         *, strict: bool = False,
     ) -> list[FactSheet]:
         """Retrieve historical facts for a module, optionally filtered by version."""
-        scope = current_scope()
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 0:
             raise ValueError('limit must be a non-negative integer')
         if limit == 0:
@@ -278,13 +258,6 @@ class FactLedger:
                 try:
                     query = 'SELECT facts_json, jtl_hash, execution_id FROM fact_sheets WHERE module = ?'
                     params = [module]
-                    if scope is not None:
-                        allowed = [identity for identity, record in scope.executions.items()
-                                   if scope.authorization.allows(record['project_id'], 'read')]
-                        if not allowed:
-                            return []
-                        query += ' AND execution_id IN (' + ','.join('?' for _ in allowed) + ')'
-                        params.extend(allowed)
                     if version:
                         query += ' AND version = ?'
                         params.append(version)
@@ -312,20 +285,17 @@ class FactLedger:
                     return []
 
     async def _verified_row(self, row) -> Optional[FactSheet]:
-        require_execution(row[2])
         try:
             fact = FactSheet.model_validate_json(row[0])
             if fact.execution_id != row[2]:
                 logger.warning('Skipping fact row: execution identity mismatch')
                 return None
-            _authorize_source(fact.execution_id, fact.jtl_path)
             if fact.jtl_path and row[1]:
-                digest = await run_analysis_sync(self._jtl_hash, fact.jtl_path)
+                digest = await asyncio.to_thread(self._jtl_hash, fact.jtl_path)
                 # Legacy rows stored a 16-character SHA256 prefix; retain compatibility.
                 if not digest or not digest.startswith(row[1]):
                     logger.warning('Skipping fact %s: JTL hash mismatch or file unavailable', fact.execution_id)
                     return None
-            _authorize_source(fact.execution_id, fact.jtl_path)
             return fact
         except (ValueError, TypeError, OSError) as error:
             logger.warning('Skipping unreadable fact row: %s', type(error).__name__)
@@ -347,7 +317,7 @@ class FactLedger:
             logger.warning(f"Cannot rebuild fact {execution_id}: JTL missing")
             return None
 
-        new_fact = await run_analysis_sync(self.compute_from_jtl,
+        new_fact = await asyncio.to_thread(self.compute_from_jtl,
             jtl_path=old.jtl_path,
             execution_id=execution_id,
             module=old.module,

@@ -13,8 +13,21 @@ from typing import Optional, Callable
 from xml.etree import ElementTree as ET
 
 from app.core.config import settings
-from app.middleware.concurrency_guard import concurrency_guard
 from app.models.schemas import TestExecutionInfo, TestExecutionStatus
+
+_jmeter_slots: Optional[asyncio.Semaphore] = None
+
+
+async def _acquire_jmeter_slot() -> asyncio.Semaphore:
+    """Concurrent JMeter runs skew each other's numbers; wait for a free slot."""
+    global _jmeter_slots
+    if _jmeter_slots is None:
+        _jmeter_slots = asyncio.Semaphore(settings.RESOURCE_MAX_CONCURRENT_TESTS)
+    try:
+        await asyncio.wait_for(_jmeter_slots.acquire(), timeout=settings.RESOURCE_MAX_WAIT_SECONDS)
+    except asyncio.TimeoutError:
+        raise RuntimeError(f'JMeter concurrency limit ({settings.RESOURCE_MAX_CONCURRENT_TESTS}) reached') from None
+    return _jmeter_slots
 
 # Windows-only Popen flags; resolved lazily so the Windows branches stay importable
 # and testable on POSIX, where these constants do not exist.
@@ -168,7 +181,8 @@ class JMeterExecutor:
         self._running_processes[execution_id] = entry
         monitor = None
         try:
-            async with concurrency_guard.jmeter():
+            slots = await _acquire_jmeter_slot()
+            try:
                 if any(item.get('cleanup_failed') for item in self._running_processes.values()):
                     raise RuntimeError('Previous execution cleanup is incomplete')
                 info.status = TestExecutionStatus.RUNNING
@@ -204,6 +218,8 @@ class JMeterExecutor:
                     await asyncio.to_thread(self._kill_process, execution_id)
                     info.status = TestExecutionStatus.FAILED
                     info.error_message = str(error)
+            finally:
+                slots.release()
         except asyncio.CancelledError:
             info.status = TestExecutionStatus.CANCELLED
             raise

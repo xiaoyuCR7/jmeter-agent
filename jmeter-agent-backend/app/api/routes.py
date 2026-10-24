@@ -11,16 +11,13 @@ from typing import Optional, Any
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Depends
 from fastapi.responses import FileResponse
-from app.services.authenticated_stream import AuthenticatedStreamingResponse as StreamingResponse
+from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
 
-from app.api.project_boundary import project_request_guard
-from app.services.project_scope import require_project, require_plan, require_execution, require_path, refresh_scope
-router = APIRouter(dependencies=[Depends(project_request_guard)])
+router = APIRouter()
 
 from app.core.config import settings
-from app.services.auth import require_auth, UserInfo
 from app.services.db_store import db_store
 from app.models.schemas import (
     GenerateTestPlanRequest, TestPlanInfo, ExecuteTestRequest,
@@ -52,10 +49,8 @@ from app.services.jmeter.sla_engine import SLAEngine, SLAConfig
 from app.services.jmeter.function_registry import get_all_functions
 from app.services.ai.agents import TestPlanAgent, AnalysisAgent, WorkflowAgent
 from app.services.ai.agents.analysis_agent import AnalysisExecutionError
-from app.services.ai.agents.autotune_agent import AutoTuneAgent, AutoTuneConfig, OptimizationGoal, OptimizationStrategy
 from app.services.openapi_importer import OpenAPIImporter
 from app.services.ml_analysis import ml_detector, metrics_correlator
-from app.services.insights_engine import cost_estimator, drift_detector, version_comparator
 from app.services.ai.agents.selfheal_agent import selfheal
 from app.services.ai.agent.types import AgentState
 from app.services.ai.agent.base import BaseAgent
@@ -89,9 +84,7 @@ async def _persist_execution(execution: TestExecutionInfo):
 async def _delete_project_from_db(project_id: str):
     """Delete project from both DB and in-memory store."""
     await db_store.delete_project(project_id)
-    from app.services.project_scope import internal_scope
-    with internal_scope():
-        store.delete_project(project_id)
+    store.delete_project(project_id)
 
 
 async def _delete_test_plan_from_db(plan_id: str):
@@ -167,8 +160,6 @@ def _save_analysis_markdown(report_dir: str, execution_id: str, analysis) -> str
         md += f"\n## 最终结论\n\n{ad.get('conclusion', '无')}\n"
 
         filepath = os.path.join(report_dir, "ai_analysis.md")
-        require_execution(execution_id, write=True)
-        require_path(filepath, write=True)
         with open(filepath, "w", encoding="utf-8") as f:
             f.write(md)
         return filepath
@@ -526,7 +517,6 @@ async def get_templates():
 @router.post("/projects/{project_id}/test-plans/generate", response_model=TestPlanInfo)
 async def generate_test_plan(request: GenerateTestPlanRequest, project_id: str = DEFAULT_PROJECT_ID):
     """生成测试计划（支持指定的项目ID或路径参数）"""
-    require_project(project_id, write=True)
     try:
         # Ensure project exists
         if project_id not in store.projects:
@@ -611,12 +601,10 @@ async def get_test_plan(plan_id: str):
 @router.delete("/test-plans/{plan_id}")
 async def delete_test_plan(plan_id: str):
     """删除测试计划"""
-    require_plan(plan_id, write=True)
     if plan_id not in store.test_plans:
         raise HTTPException(status_code=404, detail="Test plan not found")
     
     plan = store.test_plans[plan_id]
-    require_path(plan.jmx_path, write=True)
     await _delete_test_plan_from_db(plan_id)
     # Delete JMX file
     if os.path.exists(plan.jmx_path):
@@ -645,14 +633,11 @@ async def get_jmx_tree(plan_id: str):
 @router.put("/test-plans/{plan_id}/tree")
 async def update_jmx_tree(plan_id: str, request: UpdateJMXTreeRequest):
     """更新 JMX 文件的树形结构"""
-    require_plan(plan_id, write=True)
     if plan_id not in store.test_plans:
         raise HTTPException(status_code=404, detail="Test plan not found")
 
     plan = store.test_plans[plan_id]
     backup_path = plan.jmx_path + ".backup"
-    require_path(plan.jmx_path, write=True)
-    require_path(backup_path, write=True)
 
     try:
         jmx_content = build_jmx(request.tree.model_dump() if hasattr(request.tree, "model_dump") else request.tree)
@@ -686,7 +671,6 @@ async def get_jmx_content(plan_id: str):
         raise HTTPException(status_code=404, detail="Test plan not found")
     
     plan = store.test_plans[plan_id]
-    require_path(plan.jmx_path)
     if not os.path.exists(plan.jmx_path):
         raise HTTPException(status_code=404, detail="JMX file not found")
     
@@ -703,7 +687,6 @@ async def download_test_plan(plan_id: str):
         raise HTTPException(status_code=404, detail="Test plan not found")
     
     plan = store.test_plans[plan_id]
-    require_path(plan.jmx_path)
     if not os.path.exists(plan.jmx_path):
         raise HTTPException(status_code=404, detail="JMX file not found")
     
@@ -972,7 +955,6 @@ async def create_project(request: CreateProjectRequest):
 
     # Ensure project directory exists
     project_dir = os.path.join(settings.TEST_PLANS_DIR, project_id)
-    require_path(project_dir, write=True)
     os.makedirs(project_dir, exist_ok=True)
 
     return project
@@ -1036,8 +1018,6 @@ async def update_project(project_id: str, request: UpdateProjectRequest):
 @router.delete("/projects/{project_id}")
 async def delete_project(project_id: str):
     """删除项目及其所有测试计划和执行记录"""
-    from app.services.project_scope import require_project_manage, internal_scope
-    require_project_manage(project_id)
     if project_id == DEFAULT_PROJECT_ID:
         raise HTTPException(status_code=400, detail="Cannot delete default project")
     if project_id not in store.projects:
@@ -1047,33 +1027,19 @@ async def delete_project(project_id: str):
     executions = [e for e in store.executions.values() if e.project_id == project_id]
     if any(e.status in (TestExecutionStatus.PENDING, TestExecutionStatus.RUNNING) for e in executions):
         raise HTTPException(409, 'Stop active executions before deleting their project')
-    for plan in plans:
-        require_path(plan.jmx_path, write=True)
     project_dir = os.path.join(settings.TEST_PLANS_DIR, project_id)
-    require_path(project_dir, write=True)
-    # A legacy registration can belong to another project despite its directory.
-    # Authorize every descendant before committing deletion of any DB records.
-    def scan_error(error):
-        if isinstance(error, FileNotFoundError) and error.filename == project_dir:
-            return  # Older/empty projects need not have a directory at this root.
-        raise HTTPException(409, 'Cannot verify project files for deletion') from error
-    for directory, folders, files in os.walk(project_dir, onerror=scan_error, followlinks=False):
-        for name in folders + files:
-            require_path(os.path.join(directory, name), write=True)
     await db_store.delete_project(project_id)
-    with internal_scope():
-        for plan in plans:
-            store.test_plans.pop(plan.id, None)
-        for execution in executions:
-            store.executions.pop(execution.id, None)
-        store.projects.pop(project_id, None)
+    for plan in plans:
+        store.test_plans.pop(plan.id, None)
+    for execution in executions:
+        store.executions.pop(execution.id, None)
+    store.projects.pop(project_id, None)
     for plan in plans:
         if os.path.isfile(plan.jmx_path):
             os.remove(plan.jmx_path)
     if os.path.exists(project_dir):
         shutil.rmtree(project_dir, ignore_errors=True)
-    from app.api.project_boundary import CommittedAccessResponse
-    return CommittedAccessResponse({"success": True})
+    return {"success": True}
 
 
 # ===== Environment CRUD =====
@@ -1292,9 +1258,6 @@ async def list_agents():
 @router.post("/agent/run", response_model=AgentAnalysisRunResponse, response_model_exclude_unset=True)
 async def agent_run(request: AgentRunRequest):
     """运行 Agent 任务（非流式）"""
-    if request.request_id is not None:
-        from app.api.analysis_request_routes import agent_run_keyed
-        return await agent_run_keyed(request, AnalysisAgent, AIAdapterFactory)
     try:
         evidence = (await AnalysisAgent.resolve_execution(request.execution_id)
                     if request.execution_id is not None else None)
@@ -1339,9 +1302,6 @@ async def agent_run(request: AgentRunRequest):
 @router.post("/agent/run/stream")
 async def agent_run_stream(request: AgentRunRequest):
     """运行 Agent 任务（SSE 流式返回事件）"""
-    if request.request_id is not None:
-        from app.api.analysis_request_routes import agent_run_keyed
-        return await agent_run_keyed(request, AnalysisAgent, AIAdapterFactory, stream=True)
     try:
         evidence = (await AnalysisAgent.resolve_execution(request.execution_id)
                     if request.execution_id is not None else None)
@@ -1372,12 +1332,6 @@ async def agent_run_stream(request: AgentRunRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get('/agent/analysis-requests/{request_id}')
-async def get_analysis_receipt(request_id: str):
-    from app.api.analysis_request_routes import get_receipt
-    return await get_receipt(request_id)
 
 
 @router.post("/agent/workflow", response_model=AgentRunResponse)
@@ -1475,94 +1429,6 @@ async def openapi_import(request: dict):
     }
 
 
-# ===== AutoTune =====
-
-@router.post("/agent/autotune")
-@router.post("/agent/autotune/json")
-async def agent_autotune(
-    body: Optional[dict] = None,
-    jmx_path: str = Query(None, description="Path to .jmx test plan"),
-    goal: str = Query("max_safe_concurrency", description="Optimization goal"),
-    constraint_metric: str = Query("p99_response_time"),
-    constraint_operator: str = Query("lt"),
-    constraint_value: float = Query(500.0),
-    strategy: str = Query("binary_search"),
-    min_concurrency: int = Query(5),
-    max_concurrency: int = Query(1000),
-    max_iterations: int = Query(10),
-    ramp_up_seconds: int = Query(30),
-    duration_seconds: int = Query(120),
-    tunable_params_json: Optional[str] = Query(None, description="JSON array of tunable params for multi-dim mode"),
-):
-    """Run AutoTune optimization against a JMX test plan.
-
-    Accepts both query params (GET-style) and JSON body (POST-style).
-    JSON body values override query param defaults.
-    """
-    # Merge JSON body params over query param defaults
-    if body:
-        jmx_path = body.get("jmx_path", jmx_path)
-        goal = body.get("goal", goal)
-        constraint_metric = body.get("constraint_metric", constraint_metric)
-        constraint_operator = body.get("constraint_operator", constraint_operator)
-        constraint_value = body.get("constraint_value", constraint_value)
-        strategy = body.get("strategy", strategy)
-        min_concurrency = body.get("min_concurrency", min_concurrency)
-        max_concurrency = body.get("max_concurrency", max_concurrency)
-        max_iterations = body.get("max_iterations", max_iterations)
-        ramp_up_seconds = body.get("ramp_up_seconds", ramp_up_seconds)
-        duration_seconds = body.get("duration_seconds", duration_seconds)
-        tunable_params_json = body.get("tunable_params_json", tunable_params_json)
-
-    if not jmx_path:
-        raise HTTPException(status_code=400, detail="jmx_path is required")
-    try:
-        goal_enum = OptimizationGoal(goal)
-        strategy_enum = OptimizationStrategy(strategy)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid goal or strategy: {e}")
-
-    # Parse tunable params if provided (multi-dim mode)
-    tunable_params = []
-    if tunable_params_json:
-        try:
-            from app.services.ai.agents.autotune_agent import TunableParameter
-            raw_list = json.loads(tunable_params_json)
-            tunable_params = [
-                TunableParameter(
-                    name=p["name"],
-                    min_value=p.get("min_value", 1),
-                    max_value=p.get("max_value", 1000),
-                    step=p.get("step", 1),
-                    description=p.get("description", p["name"]),
-                )
-                for p in raw_list
-            ]
-        except (json.JSONDecodeError, KeyError) as e:
-            raise HTTPException(status_code=400, detail=f"Invalid tunable_params JSON: {e}")
-
-    config = AutoTuneConfig(
-        goal=goal_enum,
-        strategy=strategy_enum,
-        constraint_metric=constraint_metric,
-        constraint_operator=constraint_operator,
-        constraint_value=constraint_value,
-        min_concurrency=min_concurrency,
-        max_concurrency=max_concurrency,
-        ramp_up_seconds=ramp_up_seconds,
-        duration_seconds=duration_seconds,
-        max_iterations=max_iterations,
-        tunable_params=tunable_params,
-        optimize_param="concurrency",
-    )
-
-    agent = AutoTuneAgent()
-    result = await agent.optimize(jmx_path=jmx_path, config=config)
-    return result.model_dump()
-
-
-# ===== AI Analysis Reports Management =====
-
 @router.get("/analysis/reports")
 async def list_analysis_reports(
     project_id: Optional[str] = Query(None),
@@ -1639,7 +1505,6 @@ async def download_analysis_report(execution_id: str):
         raise HTTPException(status_code=404, detail="Report directory not found")
 
     md_path = os.path.join(e.report_dir, "ai_analysis.md")
-    require_path(md_path)
     if not os.path.isfile(md_path):
         raise HTTPException(status_code=404, detail="AI analysis markdown not found")
 
@@ -1869,6 +1734,27 @@ async def get_allowed_doc_types():
 
 
 # ===== System Info =====
+# ===== Agent tool confirmations =====
+
+@router.get("/confirmations")
+async def pending_confirmations():
+    from app.services.confirmations import confirmations
+    return confirmations.list_pending()
+
+
+@router.post("/confirmations/{confirmation_id}")
+async def decide_confirmation(confirmation_id: str, decision: dict):
+    from app.services.confirmations import confirmations
+    approved = decision.get("approved")
+    if not isinstance(approved, bool):
+        raise HTTPException(422, "approved must be a JSON boolean")
+    try:
+        confirmations.decide(confirmation_id, approved)
+    except KeyError:
+        raise HTTPException(409, "Confirmation expired or already consumed")
+    return {"accepted": True}
+
+
 @router.get("/system/info")
 async def system_info():
     """获取系统信息"""

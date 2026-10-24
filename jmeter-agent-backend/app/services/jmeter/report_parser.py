@@ -61,14 +61,11 @@ class ReportParser:
 
     def parse_jtl(self, jtl_path: str) -> DetailedTestSummary:
         """解析JTL结果文件，返回详细的测试摘要"""
-        from app.services.project_scope import require_path
-        require_path(jtl_path)
         if not os.path.exists(jtl_path):
             raise FileNotFoundError(f"JTL file not found: {jtl_path}")
 
         # Brief stabilization wait — JMeter may still be flushing CSV buffers
         self._wait_file_stable(jtl_path)
-        require_path(jtl_path)
 
         with open(jtl_path, "r", encoding="utf-8") as f:
             first_line = f.readline().strip()
@@ -507,8 +504,6 @@ class ReportParser:
         """
         html_dir = os.path.join(report_dir, "html")
         stats_path = os.path.join(html_dir, "statistics.json")
-        from app.services.project_scope import require_path
-        require_path(stats_path)
 
         if not os.path.exists(stats_path):
             # Try alternate locations
@@ -517,7 +512,6 @@ class ReportParser:
                 os.path.join(report_dir, "html", "content", "js", "dashboard.js"),
             ]
             for alt in alt_paths:
-                require_path(alt)
                 if os.path.exists(alt):
                     stats_path = alt
                     break
@@ -656,16 +650,12 @@ class ReportParser:
             return None
         html_dir = os.path.join(report_dir, "html")
         index_path = os.path.join(html_dir, "index.html")
-        from app.services.project_scope import require_path
-        require_path(index_path)
         if os.path.exists(index_path):
             return index_path
         return None
 
     def read_log(self, log_path: str, tail_lines: int = 100) -> str:
         """读取日志文件尾部"""
-        from app.services.project_scope import require_path
-        require_path(log_path)
         if not os.path.exists(log_path):
             return ""
         

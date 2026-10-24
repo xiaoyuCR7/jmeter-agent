@@ -8,6 +8,7 @@ from $.data.token to $.result.jwt), this agent:
 4. Re-runs the test automatically
 """
 
+import asyncio
 import json
 import logging
 import math
@@ -98,10 +99,6 @@ class SelfHealAgent:
         import os
         from app.core.config import settings, safe_path
         from app.services.execution_lifecycle import validate_id
-        from app.services.project_scope import refresh_scope, require_execution, require_path
-        await refresh_scope()
-        require_execution(failed_execution_id)
-        require_path(jmx_path, write=True)
         try:
             validate_id(failed_execution_id)
             jmx_path = safe_path(jmx_path, allowed_dirs=[settings.TEST_PLANS_DIR])
@@ -128,7 +125,7 @@ class SelfHealAgent:
         parser = ReportParser()
 
         try:
-            summary = parser.parse_jtl(jtl_path)
+            summary = await asyncio.to_thread(parser.parse_jtl, jtl_path)
         except Exception:
             # Try reading raw JTL for error patterns
             error_patterns = self._analyze_raw_jtl(jtl_path)
@@ -212,9 +209,6 @@ class SelfHealAgent:
             )
 
         # Step 5: Apply fixes to the JMX
-        await refresh_scope()
-        require_execution(failed_execution_id)
-        require_path(jmx_path, write=True)
         try:
             self._apply_fixes(tree, fixes)
             from app.services.jmeter.jmx_builder import build_jmx
@@ -222,7 +216,6 @@ class SelfHealAgent:
             # Backup original
             import uuid
             backup_path = jmx_path + f".selfheal.{uuid.uuid4().hex}.bak"
-            require_path(backup_path, write=True)
             if os.path.exists(jmx_path):
                 import shutil
                 shutil.copy2(jmx_path, backup_path)

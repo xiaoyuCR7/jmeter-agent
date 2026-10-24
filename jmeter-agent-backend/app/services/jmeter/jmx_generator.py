@@ -1413,10 +1413,8 @@ class JMXGenerator:
                      When provided, filename is '{plan_id}.jmx'.
                      When omitted, generates '{name}_{random_id}.jmx'.
         """
-        from app.services.project_scope import require_path, require_project
         from app.services.execution_lifecycle import validate_id
         project_id = validate_id(project_id or 'default')
-        require_project(project_id, write=True)
         if plan_id:
             validate_id(plan_id)
             filename = f"{plan_id}.jmx"
@@ -1428,7 +1426,6 @@ class JMXGenerator:
         filepath = os.path.join(project_dir, filename)
         if os.path.dirname(os.path.realpath(filepath)) != os.path.realpath(project_dir):
             raise ValueError('JMX filename must remain within its project')
-        require_path(filepath, write=True)
         os.makedirs(project_dir, exist_ok=True)
 
         with open(filepath, "w", encoding="utf-8") as f:

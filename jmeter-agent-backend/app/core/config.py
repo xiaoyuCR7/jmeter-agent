@@ -38,22 +38,10 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite+aiosqlite:///./jmeter_agent.db"
 
-    # Auth
-    JWT_SECRET: str = "change-me-in-production-use-env-var"
-    JWT_ALGORITHM: str = "HS256"
-    JWT_EXPIRE_MINUTES: int = 60       # access token: 1 hour
-    JWT_REFRESH_EXPIRE_DAYS: int = 7   # refresh token: 7 days
-    DEFAULT_ADMIN_USERNAME: str = "admin"
-    DEFAULT_ADMIN_PASSWORD: str = "admin123"
+    # Browser origins allowed to call the local API
     CORS_ORIGINS: List[str] = ["http://localhost:5173", "http://127.0.0.1:5173",
                                "http://localhost:3000", "http://127.0.0.1:3000"]
 
-    # Rate Limiting
-    RATE_LIMIT_ENABLED: bool = True
-    RATE_LIMIT_GLOBAL: str = "200/minute"    # global API rate limit
-    RATE_LIMIT_AUTH: str = "10/minute"       # login endpoint rate limit
-    RATE_LIMIT_AI: str = "30/minute"         # AI/LLM endpoints rate limit
-    RATE_LIMIT_MCP: str = "60/minute"        # MCP server rate limit    
     # Paths
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     JMETER_HOME: str = os.path.join(os.path.dirname(BASE_DIR), "bin")
@@ -113,23 +101,8 @@ class Settings(BaseSettings):
     # Agent
     AGENT_TOOL_TIMEOUT_SECONDS: float = 600.0    # max seconds per tool call (10 min)
     AGENT_MAX_CONCURRENT: int = 3                # max concurrent agent executions
-    ANALYSIS_MAX_CONCURRENT: Optional[int] = None  # registered pipeline; None inherits AGENT_MAX_CONCURRENT
     AGENT_CONTEXT_TOKEN_BUDGET: int = 16384      # input + schemas + reserved output; set to model capacity
     AGENT_MAX_TOOL_CALLS_PER_RESPONSE: int = 8
-
-    @field_validator('ANALYSIS_MAX_CONCURRENT', mode='before')
-    @classmethod
-    def validate_analysis_concurrency(cls, value):
-        if value is None:
-            return value
-        if isinstance(value, str):
-            try:
-                value = int(value)
-            except ValueError:
-                raise ValueError('ANALYSIS_MAX_CONCURRENT must be a positive integer') from None
-        if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-            raise ValueError('ANALYSIS_MAX_CONCURRENT must be a positive integer')
-        return value
 
     # Conversation Memory Persistence
     MEMORY_PERSIST_ENABLED: bool = True
@@ -149,22 +122,6 @@ class Settings(BaseSettings):
     WEBHOOK_URL: Optional[str] = None            # URL to POST test completion notifications
     WEBHOOK_ON_COMPLETE: bool = True             # Fire webhook on test completion
     WEBHOOK_ON_FAILURE: bool = True              # Fire webhook on test failure
-
-    # Trae IDE Connection Configuration
-    TRAE_API_BASE: Optional[str] = "http://localhost:8000"  # Trae IDE MCP server base URL
-    TRAE_API_KEY: Optional[str] = None                        # Trae API authentication key
-    TRAE_CONNECTION_TIMEOUT: int = 30                         # Connection timeout in seconds
-    TRAE_READ_TIMEOUT: int = 120                              # Read timeout in seconds
-    TRAE_DATA_FORMAT: str = "json"                            # Data format: json / jsonrpc
-    TRAE_PROTOCOL_VERSION: str = "2024-11-05"                 # MCP protocol version for Trae
-
-    # Codex (Claude Code) Connection Configuration
-    CODEX_API_BASE: Optional[str] = None                      # Codex API base URL
-    CODEX_API_KEY: Optional[str] = None                       # Codex API authentication key
-    CODEX_CONNECTION_TIMEOUT: int = 30                        # Connection timeout in seconds
-    CODEX_READ_TIMEOUT: int = 120                             # Read timeout in seconds
-    CODEX_DATA_FORMAT: str = "json"                           # Data format: json / jsonrpc
-    CODEX_PROTOCOL_VERSION: str = "2024-11-05"                # MCP protocol version for Codex
 
     # JMeter JVM configuration
     JMETER_HEAP_MIN: str = "256m"                # -Xms initial heap
@@ -189,11 +146,9 @@ os.makedirs(settings.REPORTS_DIR, exist_ok=True)
 
 
 def validate_deployment_security():
-    if not settings.DEBUG or settings.HOST not in ('127.0.0.1', 'localhost', '::1'):
-        if settings.JWT_SECRET == 'change-me-in-production-use-env-var' or len(settings.JWT_SECRET) < 32:
-            raise RuntimeError('Set a strong JWT_SECRET before production or non-loopback binding')
-        if settings.DEFAULT_ADMIN_PASSWORD == 'admin123':
-            raise RuntimeError('Change DEFAULT_ADMIN_PASSWORD before production or non-loopback binding')
+    """There is no authentication, so the API must never listen beyond loopback."""
+    if settings.HOST not in ('127.0.0.1', 'localhost', '::1'):
+        raise RuntimeError('No-login local mode: HOST must be a loopback address (127.0.0.1 / ::1)')
 
 
 def safe_path(user_path: str, allowed_dirs: list[str] = None) -> str:
@@ -219,8 +174,6 @@ def safe_path(user_path: str, allowed_dirs: list[str] = None) -> str:
         base_resolved = os.path.realpath(os.path.abspath(base))
         try:
             if os.path.normcase(os.path.commonpath([resolved, base_resolved])) == os.path.normcase(base_resolved):
-                from app.services.project_scope import require_path
-                require_path(resolved)
                 return resolved
         except ValueError:
             continue

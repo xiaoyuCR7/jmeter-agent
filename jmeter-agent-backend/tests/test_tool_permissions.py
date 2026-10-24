@@ -28,55 +28,6 @@ async def test_dangerous_tool_without_authenticated_owner_is_denied():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('approve', [True, False])
-async def test_confirmation_binds_owner_and_exact_arguments(approve):
-    from app.services.auth import UserInfo
-    from app.services.confirmations import confirmations
-    from app.services.security_context import current_principal
-    owner = UserInfo(username='alice', role='operator')
-    token = current_principal.set(owner)
-    handler = AsyncMock(return_value={'ok': True})
-    registry = ToolRegistry()
-    registry.register(Tool('danger', 'danger', {'properties': {'path': {'type': 'string'}}}, handler,
-                           require_confirmation=True))
-    args = {'path': 'original'}
-    task = asyncio.create_task(registry.execute('danger', args))
-    try:
-        for _ in range(10):
-            await asyncio.sleep(0)
-            pending = await confirmations.list_pending(owner)
-            if pending:
-                break
-        assert len(pending) == 1
-        handler.assert_not_awaited()
-        with pytest.raises(PermissionError):
-            await confirmations.decide(pending[0]['id'], 'bob', True)
-        args['path'] = 'changed-after-request'
-        await confirmations.decide(pending[0]['id'], owner, approve)
-        result = await task
-        assert result.success is approve
-        if approve:
-            handler.assert_awaited_once_with(path='original')
-        else:
-            handler.assert_not_awaited()
-        assert await confirmations.list_pending(owner) == []
-        with pytest.raises(KeyError):
-            await confirmations.decide(pending[0]['id'], owner, True)
-    finally:
-        task.cancel()
-        current_principal.reset(token)
-
-
-@pytest.mark.asyncio
-async def test_confirmation_timeout_cannot_execute_or_leak_pending_request():
-    from app.services.auth import UserInfo
-    from app.services.confirmations import ConfirmationManager
-    manager = ConfirmationManager(timeout_seconds=0.001)
-    assert not await manager.request(UserInfo(username='alice', role='operator'), 'test', {})
-    assert await manager.list_pending('alice') == []
-
-
-@pytest.mark.asyncio
 async def test_mcp_uses_same_parameter_and_business_failure_contract():
     import json
     from app.services.mcp_server import MCPServer

@@ -192,43 +192,6 @@ class TestExecute:
         with pytest.raises(FileNotFoundError):
             await ex.execute(str(tmp_path / "nope.jmx"), "exec-x")
 
-    @pytest.mark.asyncio
-    async def test_task_cancellation_cleans_process_before_releasing_guard(self, tmp_path, monkeypatch):
-        from unittest.mock import AsyncMock, Mock
-        from app.middleware.concurrency_guard import concurrency_guard
-        from app.core.config import settings
-
-        monkeypatch.setattr(settings, 'REPORTS_DIR_DEFAULT', str(tmp_path / 'reports'))
-        ex = make_executor()
-        ex._execute_windows_terminal = AsyncMock(return_value=123456789)
-        ex._ws_broadcast = AsyncMock()
-        started = asyncio.Event()
-        active_at_kill = []
-
-        def kill(execution_id):
-            active_at_kill.append(concurrency_guard.jmeter().stats.active)
-
-        ex._kill_process = Mock(side_effect=kill)
-
-        async def wait(*args, **kwargs):
-            started.set()
-            await asyncio.Event().wait()
-
-        ex._wait_for_completion = wait
-        jmx = tmp_path / 'plan.jmx'
-        jmx.write_text('<jmeterTestPlan/>')
-        task = asyncio.create_task(ex.execute(str(jmx), 'cancel-regression'))
-        try:
-            await asyncio.wait_for(started.wait(), timeout=1)
-            task.cancel()
-            with pytest.raises(asyncio.CancelledError):
-                await task
-            ex._kill_process.assert_called_once_with('cancel-regression')
-            assert active_at_kill == [1]
-            assert 'cancel-regression' not in ex._running_processes
-        finally:
-            ex._running_processes.pop('cancel-regression', None)
-
 
 class TestSchedulerReadiness:
     def test_readiness_does_not_require_executor(self):

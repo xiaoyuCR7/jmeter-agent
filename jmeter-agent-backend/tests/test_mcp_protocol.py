@@ -8,7 +8,6 @@ import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
-from app.services.auth import UserInfo
 from app.services.mcp_server import MCPServer
 
 
@@ -19,13 +18,12 @@ def rpc(method='ping', req_id=1, params=None):
     return json.dumps(body)
 
 
-def request(method='GET', query='', body='', owner='alice'):
+def request(method='GET', query='', body=''):
     async def receive():
         return {'type': 'http.request', 'body': body.encode(), 'more_body': False}
     return Request({'type': 'http', 'method': method, 'path': '/api/v1/mcp/sse',
                     'root_path': '', 'scheme': 'http', 'server': ('test', 80),
-                    'query_string': query.encode(), 'headers': [(b'host', b'test')],
-                    'state': {'auth_user': UserInfo(username=owner, role='operator')}}, receive)
+                    'query_string': query.encode(), 'headers': [(b'host', b'test')]}, receive)
 
 
 @pytest.fixture
@@ -36,9 +34,9 @@ def server(monkeypatch):
     return server
 
 
-async def connect(owner='alice'):
+async def connect():
     from app.api.mcp_routes import mcp_sse
-    response = await mcp_sse(request(owner=owner))
+    response = await mcp_sse(request())
     iterator = response.body_iterator
     first = await anext(iterator)
     assert first.startswith('event: endpoint\n')
@@ -48,9 +46,9 @@ async def connect(owner='alice'):
     return iterator, query, parse_qs(query)['session_id'][0]
 
 
-async def post(query, body, owner='alice'):
+async def post(query, body):
     from app.api.mcp_routes import mcp_messages
-    return await mcp_messages(request('POST', query, body, owner))
+    return await mcp_messages(request('POST', query, body))
 
 
 async def receive(iterator):
@@ -105,8 +103,8 @@ async def test_parse_error_and_numeric_string_ids_are_preserved():
 
 @pytest.mark.asyncio
 async def test_sse_post_accepted_and_responses_are_private(server):
-    a, aq, aid = await connect('alice')
-    b, bq, bid = await connect('bob')
+    a, aq, aid = await connect()
+    b, bq, bid = await connect()
     try:
         assert aid != bid
         await initialize(a, aq)
@@ -122,12 +120,12 @@ async def test_sse_post_accepted_and_responses_are_private(server):
 
 
 @pytest.mark.asyncio
-async def test_endpoint_owner_and_missing_session_are_rejected(server):
+async def test_missing_session_is_rejected(server):
     stream, query, _ = await connect()
     try:
-        for candidate, owner, status in [(query, 'bob', 404), ('session_id=unknown', 'alice', 404), ('', 'alice', 400)]:
+        for candidate, status in [('session_id=unknown', 404), ('', 400)]:
             with pytest.raises(HTTPException) as exc:
-                await post(candidate, rpc(), owner)
+                await post(candidate, rpc())
             assert exc.value.status_code == status
     finally:
         await stream.aclose()
@@ -302,93 +300,6 @@ async def test_session_cancellation_removes_task_even_before_first_run(server):
         assert server._sessions[sid].queue.empty()
     finally:
         await stream.aclose()
-
-
-@pytest.mark.asyncio
-async def test_asgi_disconnect_awaits_pending_tool_and_preserves_auth_context(server, monkeypatch):
-    """Drive real Starlette cancellation, not just generator.aclose()."""
-    import httpx
-    from fastapi import FastAPI
-    from app.api.mcp_routes import router
-    from app.middleware import authentication
-    from app.services import authenticated_stream
-    from app.services.security_context import current_principal, current_access_token
-    async def authenticate(credentials):
-        assert credentials.credentials == 'test-access-token'
-        return UserInfo(username='alice', role='operator')
-    monkeypatch.setattr(authentication, 'get_current_user', authenticate)
-    monkeypatch.setattr(authenticated_stream, 'get_current_user', authenticate)
-    from app.services import auth, project_scope
-    from app.services.project_access import AccessSnapshot
-    monkeypatch.setattr(auth, 'get_current_user', authenticate)
-    async def access_scope():
-        return project_scope.AccessScope(AccessSnapshot(801, 'operator', 0, 'mcp-fixture', {}, {}))
-    monkeypatch.setattr(project_scope, 'load_user_scope', access_scope)
-    monkeypatch.setattr(project_scope, 'recheck_scope', access_scope)
-    app = FastAPI()
-    app.include_router(router, prefix='/api/v1')
-    app.add_middleware(authentication.AuthenticationMiddleware)
-    started, stopped = asyncio.Event(), asyncio.Event()
-    async def slow():
-        assert current_principal.get().username == 'alice'
-        assert current_access_token.get() == 'test-access-token'
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            await asyncio.sleep(0)
-            stopped.set()
-    server.register_tool('slow', 'slow', {}, slow)
-    incoming, outgoing = asyncio.Queue(), asyncio.Queue()
-    await incoming.put({'type': 'http.request', 'body': b'', 'more_body': False})
-    scope = request().scope
-    scope['http_version'] = '1.1'
-    scope['headers'].append((b'authorization', b'Bearer test-access-token'))
-    task = asyncio.create_task(app(scope, incoming.get, outgoing.put))
-    async def next_chunk():
-        while True:
-            message = await asyncio.wait_for(outgoing.get(), 2)
-            if message['type'] == 'http.response.body':
-                return message['body'].decode()
-    try:
-        endpoint = (await next_chunk()).split('data: ', 1)[1].strip()
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
-                                    headers={'Authorization': 'Bearer test-access-token'}) as client:
-            assert (await client.post(endpoint, content=rpc('initialize', 1, {
-                'protocolVersion': '2024-11-05', 'capabilities': {},
-                'clientInfo': {'name': 'wire-test', 'version': '1'}}))).status_code == 202
-            assert '"id": 1' in await next_chunk()
-            response = await client.post(endpoint, json={'jsonrpc': '2.0', 'method': 'notifications/initialized'})
-            assert response.status_code == 202 and response.content == b''
-            assert (await client.post(endpoint, content=rpc('tools/call', 2, {'name': 'slow'}))).status_code == 202
-            await asyncio.wait_for(started.wait(), 2)
-            assert (await client.post(endpoint, content=rpc('ping', 3),
-                                      headers={'Origin': 'https://evil.invalid'})).status_code == 403
-        await incoming.put({'type': 'http.disconnect'})
-        await asyncio.wait_for(task, 2)
-        assert stopped.is_set()
-        assert not server._sessions
-    finally:
-        if not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
-
-
-@pytest.mark.asyncio
-async def test_revoked_auth_before_endpoint_does_not_leak_session(server, monkeypatch):
-    from app.api.mcp_routes import mcp_sse
-    from app.services import authenticated_stream
-    from app.services.security_context import current_access_token
-    async def revoked(_):
-        raise HTTPException(401, 'Revoked')
-    monkeypatch.setattr(authenticated_stream, 'get_current_user', revoked)
-    marker = current_access_token.set('revoked-token')
-    try:
-        response = await mcp_sse(request())
-        assert [chunk async for chunk in response.body_iterator] == []
-        assert not server._sessions
-    finally:
-        current_access_token.reset(marker)
 
 
 @pytest.mark.asyncio

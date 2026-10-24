@@ -108,36 +108,6 @@
         </div>
       </el-card>
 
-      <el-card class="drift-card" v-if="driftEnabled">
-        <template #header>
-          <div class="card-header-flex">
-            <span>{{ t('report.driftDetection') }}</span>
-            <el-switch v-model="driftEnabled" />
-          </div>
-        </template>
-        <div v-if="driftResult" class="drift-result">
-          <el-alert v-if="driftResult.health === 'unknown'" :title="driftResult.recommendation" type="info" :closable="false" />
-          <div v-else-if="driftResult.health === 'drifting' || driftResult.health === 'degrading'" class="drift-warning">
-            <el-icon color="#DC2626"><Warning /></el-icon>
-            <span>{{ t('report.driftDetected') }}</span>
-            <div class="drift-details">
-              <div v-for="(warning, i) in driftResult.warnings" :key="i" class="drift-item">
-                <el-tag :type="driftResult.health === 'degrading' ? 'danger' : 'warning'" size="small">
-                  {{ driftResult.health }}
-                </el-tag>
-                <span class="drift-desc">{{ warning }}</span>
-              </div>
-            </div>
-          </div>
-          <div v-else class="drift-success">
-            <el-icon color="#16A34A"><CircleCheck /></el-icon>
-            <span>{{ t('report.noDrift') }}</span>
-          </div>
-        </div>
-        <div v-else>
-          <el-button type="primary" @click="detectDrift">{{ t('report.runDriftDetection') }}</el-button>
-        </div>
-      </el-card>
 
       <!-- Summary Metrics -->
       <el-row :gutter="12" class="metrics-row">
@@ -479,8 +449,6 @@ const comparisonEnabled = ref(true)
 const compareExecutionId = ref('')
 const compareExecutions = ref<any[]>([])
 const compareReport = ref<any>(null)
-const driftEnabled = ref(true)
-const driftResult = ref<any>(null)
 
 const percentileChartOption = computed(() => {
   if (!report.value) return {}
@@ -630,16 +598,6 @@ const getChangeClass = (current: number, compare: number, higherIsBetter = false
   return ''
 }
 
-const detectDrift = async () => {
-  if (!report.value) return
-  try {
-    const res = await api.detectDrift(report.value.execution_id)
-    driftResult.value = res.data
-  } catch (e: any) {
-    driftResult.value = null
-    ElMessage.error(e.response?.data?.detail || t('general.error'))
-  }
-}
 
 const getResponseTimeClass = (time: number) => {
   if (time < 200) return 'good'
@@ -1013,7 +971,7 @@ onMounted(async () => {
     }
   }
 
-  .compare-card, .drift-card {
+  .compare-card {
     margin-bottom: 18px;
   }
 
@@ -1108,56 +1066,6 @@ onMounted(async () => {
     gap: 12px;
   }
 
-  .drift-result {
-    .drift-warning, .drift-success {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 16px;
-      border-radius: var(--tavily-radius-xl);
-      font-size: 15px;
-      font-weight: 500;
-    }
-
-    .drift-warning {
-      background: #FEF2F2;
-      color: #DC2626;
-      border: 1px solid #FECACA;
-      flex-direction: column;
-      align-items: flex-start;
-
-      .drift-details {
-        margin-top: 12px;
-        width: auto;
-
-        .drift-item {
-          display: flex;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 10px;
-          padding: 8px 12px;
-          margin-top: 8px;
-          background: #fff;
-          border-radius: var(--tavily-radius-lg);
-          font-size: 13px;
-          color: var(--tavily-text-secondary);
-
-          .drift-desc {
-            flex: 1;
-            min-width: 0;
-            color: var(--tavily-text-muted);
-            font-size: 12px;
-          }
-        }
-      }
-    }
-
-    .drift-success {
-      background: #ECFDF5;
-      color: #16A34A;
-      border: 1px solid #BBF7D0;
-    }
-  }
 
   .table-wrapper {
     overflow-x: auto;

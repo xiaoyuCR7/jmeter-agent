@@ -5,7 +5,6 @@ import json
 from typing import Optional
 
 from app.core.config import settings
-from app.services import project_scope
 from app.services.ai.agent.tool_registry import Tool
 from app.services.jmeter.jmx_generator import JMXGenerator
 from app.services.jmeter.jmx_parser import parse_jmx
@@ -41,7 +40,6 @@ async def create_jmx(
     from app.services.execution_lifecycle import validate_id
     project_id = project_id or 'default'
     validate_id(project_id)
-    project_scope.require_project(project_id, write=True)
     eps = []
     for ep_data in endpoints:
         # Parse extraction rules
@@ -100,7 +98,6 @@ async def create_jmx(
 
     import uuid
     plan_id = uuid.uuid4().hex
-    project_scope.require_path(os.path.join(settings.TEST_PLANS_DIR, project_id, f'{plan_id}.jmx'), write=True)
     jmx_path = generator.save_jmx(jmx_content, name=test_name, project_id=project_id,
                                   plan_id=plan_id)
     from app.services.execution_lifecycle import execution_lifecycle
@@ -170,19 +167,16 @@ async def get_jmx_content(jmx_path: str) -> dict:
 
 async def list_test_plans() -> dict:
     """List all saved JMX test plans."""
-    project_scope.require_path(settings.TEST_PLANS_DIR, allow_root_listing=True)
     if not os.path.exists(settings.TEST_PLANS_DIR):
         return {"test_plans": []}
 
     plans = []
     for item in os.listdir(settings.TEST_PLANS_DIR):
         item_path = os.path.join(settings.TEST_PLANS_DIR, item)
-        if not project_scope.can_path(item_path):
-            continue
         if os.path.isdir(item_path):
             # New structure: test_plans/<project_id>/<file>.jmx
             for f in os.listdir(item_path):
-                if f.endswith(".jmx") and project_scope.can_path(os.path.join(item_path, f)):
+                if f.endswith(".jmx"):
                     plans.append({
                         "name": f.replace(".jmx", ""),
                         "project_id": item,
@@ -273,7 +267,6 @@ async def update_jmx(
     try:
         from app.core.config import safe_path
         jmx_path = safe_path(jmx_path, allowed_dirs=[settings.TEST_PLANS_DIR])
-        project_scope.require_path(jmx_path, write=True)
     except ValueError as e:
         return {"error": str(e)}
 
@@ -394,11 +387,9 @@ async def clone_jmx(jmx_path: str, new_name: str = "") -> dict:
     try:
         new_path = safe_path(new_path, allowed_dirs=[settings.TEST_PLANS_DIR])
         new_path = safe_path(new_path, allowed_dirs=[project_dir])
-        project_scope.require_path(new_path, write=True)
         if os.path.exists(new_path):
             new_path = safe_path(os.path.join(project_dir, f"{new_name}_{str(uuid.uuid4())[:6]}.jmx"),
                                  allowed_dirs=[project_dir])
-            project_scope.require_path(new_path, write=True)
         source_content = Path(jmx_path).read_bytes()
         with open(new_path, "xb") as dst:
             dst.write(source_content)
@@ -431,13 +422,11 @@ async def import_jmx(source_path: str, project_id: str = "default",
     from app.services.execution_lifecycle import execution_lifecycle, validate_id
     try:
         validate_id(project_id)
-        project_scope.require_project(project_id, write=True)
         source_path = safe_path(source_path)
         name = target_name or os.path.splitext(os.path.basename(source_path))[0]
         target_dir = os.path.join(settings.TEST_PLANS_DIR, project_id)
         target_path = safe_path(os.path.join(target_dir, f"{name}.jmx"), allowed_dirs=[settings.TEST_PLANS_DIR])
         target_path = safe_path(target_path, allowed_dirs=[target_dir])
-        project_scope.require_path(target_path, write=True)
     except ValueError as error:
         return {"error": str(error)}
 

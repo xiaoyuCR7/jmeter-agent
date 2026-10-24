@@ -6,36 +6,15 @@ export type AgentRunRequest = {
   model?: string | null
   session_id?: string | null
   stream?: boolean
-} & ({ agent_type: 'analysis'; execution_id: string; request_id?: string | null }
-  | { agent_type: 'analysis'; execution_id?: null; request_id?: never }
-  | { agent_type?: 'test_plan' | 'workflow'; execution_id?: never; request_id?: never })
-
-export interface AnalysisReceiptMetadata {
-  request_id: string
-  execution_id: string
-  state: 'running' | 'succeeded' | 'failed' | 'cancelled' | 'unknown'
-  phase: string
-  partial_effects_possible: boolean
-  archive: Record<string, unknown> | null
-  result_available: boolean
-  created_at: string
-  updated_at: string
-}
-
-export interface AnalysisReceipt extends AnalysisReceiptMetadata {
-  result: Omit<AgentRunResult, 'task' | 'receipt'> | null
-}
-
-export interface AnalysisReceiptStatus {
-  receipt: AnalysisReceipt
-}
+} & ({ agent_type: 'analysis'; execution_id?: string | null }
+  | { agent_type?: 'test_plan' | 'workflow'; execution_id?: never })
 
 export interface RegisteredAnalysis {
   execution_id: string
   success: boolean
   error?: string | null
-  phase?: 'admission' | 'history' | 'evaluation'
-  error_code?: 'analysis_busy' | 'analysis_unavailable' | 'ledger_read_failed'
+  phase?: 'history' | 'evaluation'
+  error_code?: 'ledger_read_failed'
   fact?: Record<string, unknown> | null
   validation?: Record<string, unknown> | null
   structured?: Record<string, unknown> | null
@@ -60,37 +39,13 @@ export interface AgentRunResult {
   error: string | null
   duration_seconds: number
   analysis?: RegisteredAnalysis
-  receipt?: AnalysisReceiptMetadata
 }
 
 export interface AgentStreamEvent {
   type: string
   message: string
   timestamp: string
-  data?: (Record<string, unknown> & { analysis?: RegisteredAnalysis; receipt?: AnalysisReceiptMetadata }) | null
-}
-
-export type ProjectMemberRole = 'viewer' | 'operator'
-
-export interface ProjectAccess {
-  project_id: string
-  mode: 'legacy_shared' | 'private'
-  permissions: { read: boolean; write: boolean; manage: boolean }
-  owner_id?: number | null
-  members?: Record<string, ProjectMemberRole>
-}
-
-export interface ProjectAccessChange {
-  owner_id: number
-  members: Record<string, ProjectMemberRole>
-}
-
-export interface ProjectAccessPreview {
-  project_id: string
-  revision: string
-  current: { mode: 'legacy_shared' | 'private'; owner_id: number | null; members: Record<string, ProjectMemberRole>; version: number }
-  proposed: ProjectAccessChange & { mode: 'private'; version: number }
-  resource_counts: Record<string, number>
+  data?: (Record<string, unknown> & { analysis?: RegisteredAnalysis }) | null
 }
 
 const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
@@ -98,24 +53,7 @@ const baseURL = import.meta.env.VITE_API_URL || '/api/v1'
 const instance = axios.create({
   baseURL,
   timeout: 120000,
-  withCredentials: true,
 })
-
-let refreshPromise: Promise<unknown> | null = null
-let authGeneration = 0
-let signingOut = false
-function refreshSession() {
-  if (signingOut) return Promise.reject(new Error('Signing out'))
-  if (!refreshPromise) {
-    refreshPromise = axios.post(`${baseURL}/auth/refresh`, null, { withCredentials: true })
-      .finally(() => { refreshPromise = null })
-  }
-  return refreshPromise
-}
-
-function authenticationRequired() {
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('auth-required'))
-}
 
 const MAX_RETRIES = 3
 const RETRY_DELAY = 1000
@@ -133,22 +71,19 @@ function getRetryDelay(retryCount: number): number {
   return RETRY_DELAY * Math.pow(2, retryCount - 1) + Math.random() * 500
 }
 
-instance.interceptors.request.use((config) => {
-  const request = config as typeof config & { _authGeneration?: number }
-  if (request._authGeneration !== undefined && request._authGeneration !== authGeneration) {
-    return Promise.reject(new axios.AxiosError('Session changed', 'ERR_CANCELED', config))
-  }
-  request._authGeneration = authGeneration
+function currentLang(): 'zh-CN' | 'en' {
   try {
     const saved = localStorage.getItem('jmeter-agent-lang')
-    if (saved === 'en' || saved === 'zh-CN') {
-      config.headers['Accept-Language'] = saved
-      if (!config.params) config.params = {}
-      if (!config.params.lang) config.params.lang = saved
-    }
-  } catch {
-    // localStorage unavailable
-  }
+    if (saved === 'en' || saved === 'zh-CN') return saved
+  } catch { /* localStorage unavailable */ }
+  return 'zh-CN'
+}
+
+instance.interceptors.request.use((config) => {
+  const lang = currentLang()
+  config.headers['Accept-Language'] = lang
+  if (!config.params) config.params = {}
+  if (!config.params.lang) config.params.lang = lang
   return config
 })
 
@@ -159,20 +94,6 @@ instance.interceptors.response.use(
     if (!config) {
       return Promise.reject(error)
     }
-    if (config._authGeneration !== authGeneration) return Promise.reject(error)
-    if (error.response?.status === 401 && !config._authRetried && !config.url?.startsWith('/auth/login')) {
-      config._authRetried = true
-      const generation = config._authGeneration
-      try {
-        await refreshSession()
-      } catch {
-        authenticationRequired()
-        return Promise.reject(error)
-      }
-      if (signingOut || generation !== authGeneration) return Promise.reject(error)
-      return instance(config)
-    }
-    if (error.response?.status === 401) authenticationRequired()
     if (!config.retry) {
       config.retry = 0
     }
@@ -198,20 +119,6 @@ instance.interceptors.response.use(
 
 export const api = {
   instance,
-  login: async (username: string, password: string) => {
-    authGeneration++
-    await refreshPromise?.catch(() => undefined)
-    return instance.post('/auth/login', { username, password })
-  },
-  logout: async () => {
-    signingOut = true
-    authGeneration++
-    try {
-      await refreshPromise?.catch(() => undefined)
-      return await instance.post('/auth/logout')
-    } finally { signingOut = false }
-  },
-  getCurrentUser: () => instance.get('/auth/me'),
   getSystemInfo: () => instance.get('/system/info'),
   getPathsConfig: () => instance.get('/system/paths'),
   updatePathsConfig: (data: any) => instance.put('/system/paths', data),
@@ -230,12 +137,6 @@ export const api = {
   createProject: (data: any) => instance.post('/projects', data),
   updateProject: (id: string, data: any) => instance.put(`/projects/${id}`, data),
   deleteProject: (id: string) => instance.delete(`/projects/${id}`),
-  getProjectAccess: (id: string) => instance.get<ProjectAccess>(`/projects/${encodeURIComponent(id)}/access`),
-  previewProjectAccess: (id: string, data: ProjectAccessChange) =>
-    instance.post<ProjectAccessPreview>(`/projects/${encodeURIComponent(id)}/access/preview`, data),
-  applyProjectAccess: (id: string, data: ProjectAccessChange & { expected_revision: string }) =>
-    instance.post(`/projects/${encodeURIComponent(id)}/access/apply`, data),
-
   generateTestPlan: (data: any) => instance.post('/test-plans/generate', data),
   generateTestPlanInProject: (projectId: string, data: any) =>
     instance.post(`/projects/${projectId}/test-plans/generate`, data),
@@ -259,62 +160,23 @@ export const api = {
   getExecution: (id: string) => instance.get(`/executions/${id}`),
   cancelExecution: (id: string) => instance.post(`/executions/${id}/cancel`),
 
-  runAgent: (data: AgentRunRequest) => instance.post<AgentRunResult | AnalysisReceiptStatus>('/agent/run', data),
-  getAnalysisReceipt: (requestId: string) => instance.get<AnalysisReceipt>(`/agent/analysis-requests/${encodeURIComponent(requestId)}`),
+  runAgent: (data: AgentRunRequest) => instance.post<AgentRunResult>('/agent/run', data),
   runAgentStream: async (data: AgentRunRequest, signal?: AbortSignal): Promise<Response> => {
     signal?.throwIfAborted()
-    if (signingOut) throw new Error('Session changed')
-    const generation = authGeneration
-    let lang = 'zh-CN'
-    try {
-      const saved = localStorage.getItem('jmeter-agent-lang')
-      if (saved === 'en' || saved === 'zh-CN') lang = saved
-    } catch { /* localStorage unavailable */ }
-    const send = () => fetch(`${baseURL}/agent/run/stream`, {
-      method: 'POST', credentials: 'include', signal,
-      headers: { 'Content-Type': 'application/json', 'Accept-Language': lang },
+    return fetch(`${baseURL}/agent/run/stream`, {
+      method: 'POST', signal,
+      headers: { 'Content-Type': 'application/json', 'Accept-Language': currentLang() },
       body: JSON.stringify(data)
     })
-    const response = await send()
-    if (response.status !== 401 || generation !== authGeneration || signingOut) return response
-    signal?.throwIfAborted()
-    try {
-      await refreshSession()
-    } catch {
-      signal?.throwIfAborted()
-      if (generation === authGeneration && !signingOut) authenticationRequired()
-      return response
-    }
-    signal?.throwIfAborted()
-    if (generation !== authGeneration || signingOut) return response
-    // Only a rejected authentication attempt may be replayed, never an executed POST.
-    await response.body?.cancel()
-    signal?.throwIfAborted()
-    if (generation !== authGeneration || signingOut) return response
-    const retried = await send()
-    if (retried.status === 401 && generation === authGeneration && !signingOut) authenticationRequired()
-    return retried
   },
 
-  runAIWorkflowStream: async (data: any) => {
-    const generation = authGeneration
-    const lang = localStorage.getItem('jmeter-agent-lang') || 'zh-CN'
-    const send = () => fetch(`${baseURL}/ai/workflow/stream`, {
+  runAIWorkflowStream: (data: any) => {
+    const lang = currentLang()
+    return fetch(`${baseURL}/ai/workflow/stream`, {
       method: 'POST',
-      credentials: 'include',
       headers: { 'Content-Type': 'application/json', 'Accept-Language': lang },
       body: JSON.stringify({ ...data, lang })
     })
-    const response = await send()
-    if (response.status !== 401) return response
-    try {
-      await refreshSession()
-      if (signingOut || generation !== authGeneration) return response
-      return await send()
-    } catch {
-      authenticationRequired()
-      return response
-    }
   },
 
   getProjectEnvironments: (projectId: string) => instance.get(`/projects/${projectId}/environments`),
@@ -332,8 +194,6 @@ export const api = {
   getAnalysisReport: (executionId: string) => instance.get(`/analysis/reports/${executionId}`),
   downloadAnalysisReport: (executionId: string) => instance.get(`/analysis/reports/${executionId}/download`, { responseType: 'blob' }),
 
-  runAutoTune: (data: any) => instance.post('/agent/autotune', null, { params: data }),
-
   runSelfHeal: (jmx_path: string, failed_execution_id: string, auto_re_run?: boolean) =>
     instance.post('/agent/selfheal', null, { params: { jmx_path, failed_execution_id, auto_re_run } }),
 
@@ -346,23 +206,7 @@ export const api = {
   correlateMetrics: (execution_id: string, prometheus_url?: string, promql?: string) =>
     instance.post('/analysis/correlate', null, { params: { execution_id, prometheus_url, promql } }),
 
-  estimateCost: (data: any) => instance.post('/analysis/estimate-cost', null, { params: data }),
-
-  analyzeDrift: (project_id?: string, days?: number) =>
-    instance.post('/analysis/drift', null, { params: { project_id, days } }),
-  detectDrift: (execution_id: string) =>
-    instance.post('/analysis/drift', null, { params: { execution_id } }),
-
-  compareVersions: (baseline_execution_id: string, target_execution_id: string, baseline_name?: string, target_name?: string) =>
-    instance.post('/analysis/compare-versions', null, { params: { baseline_execution_id, target_execution_id, baseline_name, target_name } }),
-
   checkResources: () => instance.get('/system/resources'),
-
-  getSchedules: (project_id?: string) => instance.get('/schedules', { params: project_id ? { project_id } : {} }),
-  createSchedule: (data: any) => instance.post('/schedules', data),
-  updateSchedule: (id: number, data: any) => instance.put(`/schedules/${id}`, data),
-  deleteSchedule: (id: number) => instance.delete(`/schedules/${id}`),
-  toggleSchedule: (id: number) => instance.post(`/schedules/${id}/toggle`),
 
   getBaselines: (project_id?: string) => instance.get('/baselines', { params: project_id ? { project_id } : {} }),
   getActiveBaseline: (project_id: string, test_plan_id?: string) =>
@@ -381,11 +225,8 @@ export const api = {
   previewCSV: (filepath: string, rows?: number) => instance.get('/data/preview', { params: { filepath, rows } }),
   deleteDataFile: (filepath: string) => instance.delete('/data/files', { params: { filepath } }),
 
-  getMe: () => instance.get('/auth/me'),
-  changePassword: (old_password: string, new_password: string) =>
-    instance.post('/auth/change-password', { old_password, new_password }),
-  pendingConfirmations: () => instance.get('/auth/confirmations'),
-  decideConfirmation: (id: string, approved: boolean) => instance.post(`/auth/confirmations/${id}`, { approved }),
+  pendingConfirmations: () => instance.get('/confirmations'),
+  decideConfirmation: (id: string, approved: boolean) => instance.post(`/confirmations/${encodeURIComponent(id)}`, { approved }),
 }
 
 ;(api as any).instance = instance

@@ -4,10 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
 
 from app.services.db_store import db_store
-from app.services.auth import require_auth, UserInfo
 
-from app.api.project_boundary import project_request_guard
-router = APIRouter(tags=["baselines"], dependencies=[Depends(project_request_guard)])
+router = APIRouter(tags=["baselines"])
 
 
 @router.post("/baselines")
@@ -19,7 +17,6 @@ async def create_baseline(
     description: str = "",
     thresholds: Optional[dict] = None,
     metrics_snapshot: Optional[dict] = None,
-    user: UserInfo = Depends(require_auth),
 ):
     """Create a new performance baseline for a project.
 
@@ -63,7 +60,6 @@ async def get_active_baseline(
 @router.post("/baselines/{baseline_id}/activate")
 async def activate_baseline(
     baseline_id: int,
-    user: UserInfo = Depends(require_auth),
 ):
     """Activate a baseline; other baselines in the same scope are deactivated."""
     baseline = await db_store.set_active_baseline(baseline_id)
@@ -75,7 +71,6 @@ async def activate_baseline(
 @router.delete("/baselines/{baseline_id}")
 async def delete_baseline(
     baseline_id: int,
-    user: UserInfo = Depends(require_auth),
 ):
     """Delete a performance baseline."""
     deleted = await db_store.delete_baseline(baseline_id)

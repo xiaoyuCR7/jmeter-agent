@@ -17,7 +17,6 @@ from urllib.parse import urlsplit, urljoin, quote
 
 import httpx
 from app.core.config import settings
-from app.services import project_scope
 
 logger = logging.getLogger(__name__)
 MAX_SPEC_BYTES = 5 * 1024 * 1024
@@ -284,10 +283,7 @@ class OpenAPIImporter:
                 "base_url": parsed.base_url, "environment_data": project.environment.model_dump(),
                 "created_at": project.created_at})
             project_created = True
-            await project_scope.refresh_scope()
-            project_scope.require_project(project_id, write=True)
             plan_id = uuid.uuid4().hex
-            project_scope.require_path(os.path.join(settings.TEST_PLANS_DIR, project_id, f'{plan_id}.jmx'), write=True)
             store.set_project(project_id, project)
             jmx_path = generator.save_jmx(jmx, name=f"{parsed.title} Baseline", project_id=project_id,
                                           plan_id=plan_id)
@@ -297,7 +293,6 @@ class OpenAPIImporter:
         except Exception as e:
             cleanup_errors = []
             if project_created:
-                from app.services.project_scope import internal_scope
                 expected_path = (os.path.join(settings.TEST_PLANS_DIR, project_id, f'{plan_id}.jmx')
                                  if plan_id else None)
                 if expected_path:
@@ -310,11 +305,10 @@ class OpenAPIImporter:
                     except OSError:
                         cleanup_errors.append('generated JMX file')
                 try:
-                    with internal_scope():
-                        if plan_id:
-                            store.delete_test_plan(plan_id)
-                        store.delete_project(project_id)
-                        await db_store.delete_project(project_id)
+                    if plan_id:
+                        store.delete_test_plan(plan_id)
+                    store.delete_project(project_id)
+                    await db_store.delete_project(project_id)
                 except Exception:
                     cleanup_errors.append('project registration')
             if cleanup_errors:

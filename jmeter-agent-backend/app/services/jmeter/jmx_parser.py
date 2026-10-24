@@ -24,8 +24,6 @@ RESULT_COLLECTOR_GUICLASS = {
 def parse_jmx(source: str) -> Dict[str, Any]:
     """将 JMX XML 字符串或文件路径解析为 JSON 树"""
     if os.path.isfile(source):
-        from app.services.project_scope import require_path
-        require_path(source)
         with open(source, "r", encoding="utf-8") as f:
             xml_content = f.read()
     else:

@@ -1,8 +1,4 @@
-"""Database-backed async store — replaces in-memory SharedStore.
-
-Business CRUD requires a bound project scope or explicit maintenance scope.
-Authentication CRUD remains available before a project scope can be constructed.
-"""
+"""Database-backed async store — replaces in-memory SharedStore."""
 
 import logging
 from typing import Optional, List, Dict, Any
@@ -14,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.db import (
     get_session_factory, ProjectModel, TestPlanModel, ExecutionModel,
-    EnvironmentModel, BaselineModel, UserModel, ApiTokenModel, ScheduleModel,
+    EnvironmentModel, BaselineModel,
 )
 from app.core.time import utc_now_naive
 
@@ -40,28 +36,8 @@ async def _bump_business_revision(session):
                 raise RuntimeError('Business revision initialization raced without an authority row')
 
 
-def _scope():
-    # Local import: authentication imports this store while its ContextVars are
-    # still being initialized.
-    from app.services.project_scope import current_scope
-    return current_scope()
-
-
-def _require_project(project_id, *, write=False):
-    from app.services.project_scope import require_project
-    require_project(project_id, write=write)
-
-
 def _project_conditions(column, project_id=None):
-    scope = _scope()
-    conditions = []
-    if scope is not None:
-        readable = [pid for pid, permission in scope.authorization.projects.items() if permission.read]
-        conditions.append(column.in_(readable))
-    if project_id is not None:
-        _require_project(project_id)
-        conditions.append(column == project_id)
-    return conditions
+    return [column == project_id] if project_id is not None else []
 
 
 def _immutable_identity(row, updates):
@@ -76,7 +52,6 @@ async def _source(session, model, resource_id, project_id):
     record = await session.get(model, resource_id)
     if record is None:
         raise HTTPException(404, 'Source resource not found')
-    _require_project(record.project_id)
     if record.project_id != project_id:
         raise HTTPException(422, 'Source resource project mismatch')
     return record
@@ -86,7 +61,7 @@ async def _check_plan_children(session, plan_ids, project_id):
     """Old inconsistent foreign keys must not cascade into another project."""
     if not plan_ids:
         return
-    for model in (ExecutionModel, BaselineModel, ScheduleModel):
+    for model in (ExecutionModel, BaselineModel):
         foreign = await session.execute(select(model.id).where(
             model.test_plan_id.in_(plan_ids), model.project_id != project_id,
         ).limit(1))
@@ -123,9 +98,6 @@ class DBStore:
     # ── Projects ──────────────────────────────────────────
 
     async def create_project(self, project_data: dict) -> dict:
-        scope = _scope()
-        if scope is not None and scope.authorization.global_role not in ('operator', 'admin'):
-            raise HTTPException(403, 'Project creation requires operator permission')
         async with await self._session() as s:
             p = ProjectModel(
                 id=project_data["id"],
@@ -137,24 +109,15 @@ class DBStore:
                 created_at=project_data.get("created_at", utc_now_naive()),
             )
             s.add(p)
-            await s.flush()
-            from app.models.db import ProjectAccessPolicyModel
-            if scope is None:
-                s.add(ProjectAccessPolicyModel(project_id=p.id, mode='legacy_shared', version=1))
-            else:
-                from app.services.project_access import access
-                await access.initialize_private(s, p.id, scope.authorization.user_id)
             await _bump_business_revision(s)
             await s.commit()
             return self._project_to_dict(p)
 
     async def update_project(self, project_id: str, updates: dict, *, expected_version=None) -> Optional[dict]:
-        _scope()
         async with await self._session() as s:
             p = await s.get(ProjectModel, project_id)
             if not p:
                 return None
-            _require_project(p.id, write=True)
             _immutable_identity(p, updates)
             await _versioned_update(s, ProjectModel, p, updates, expected_version, touch_updated=True)
             await _bump_business_revision(s)
@@ -162,33 +125,22 @@ class DBStore:
             return self._project_to_dict(p)
 
     async def delete_project(self, project_id: str) -> bool:
-        _scope()
         async with await self._session() as s:
             p = await s.get(ProjectModel, project_id)
             if not p:
                 return False
-            from app.services.project_scope import require_project_manage
-            from app.services.project_access import access
-            require_project_manage(p.id)
             plan_ids = list((await s.execute(select(TestPlanModel.id).where(TestPlanModel.project_id == p.id))).scalars())
             await _check_plan_children(s, plan_ids, p.id)
-            changes = await access.revoke_project(s, p.id)
-            # Schedules and standalone executions are not ORM children of the
-            # project. Remove them by their server-owned project identifier.
-            await s.execute(delete(ScheduleModel).where(ScheduleModel.project_id == p.id))
+            # Standalone executions are not ORM children of the project.
             await s.execute(delete(ExecutionModel).where(ExecutionModel.project_id == p.id))
             await s.delete(p)
             await _bump_business_revision(s)
             await s.commit()
-            access.notify_revocations(changes)
             return True
 
     async def get_project(self, project_id: str) -> Optional[dict]:
-        _scope()
         async with await self._session() as s:
             p = await s.get(ProjectModel, project_id)
-            if p:
-                _require_project(p.id)
             return self._project_to_dict(p) if p else None
 
     async def list_projects(self, offset: int = 0, limit: int = 50) -> dict:
@@ -214,7 +166,6 @@ class DBStore:
 
     async def create_test_plan(self, plan_data: dict) -> dict:
         project_id = plan_data.get('project_id', 'default')
-        _require_project(project_id, write=True)
         async with await self._session() as s:
             if await s.get(ProjectModel, project_id) is None:
                 raise HTTPException(404, 'Project not found')
@@ -236,12 +187,10 @@ class DBStore:
             return self._plan_to_dict(tp)
 
     async def update_test_plan(self, plan_id: str, updates: dict, *, expected_version=None) -> Optional[dict]:
-        _scope()
         async with await self._session() as s:
             tp = await s.get(TestPlanModel, plan_id)
             if not tp:
                 return None
-            _require_project(tp.project_id, write=True)
             _immutable_identity(tp, updates)
             await _versioned_update(s, TestPlanModel, tp, updates, expected_version, touch_updated=True)
             await _bump_business_revision(s)
@@ -249,12 +198,10 @@ class DBStore:
             return self._plan_to_dict(tp)
 
     async def delete_test_plan(self, plan_id: str) -> bool:
-        _scope()
         async with await self._session() as s:
             tp = await s.get(TestPlanModel, plan_id)
             if not tp:
                 return False
-            _require_project(tp.project_id, write=True)
             await _check_plan_children(s, [tp.id], tp.project_id)
             await s.delete(tp)
             await _bump_business_revision(s)
@@ -262,11 +209,8 @@ class DBStore:
             return True
 
     async def get_test_plan(self, plan_id: str) -> Optional[dict]:
-        _scope()
         async with await self._session() as s:
             tp = await s.get(TestPlanModel, plan_id)
-            if tp:
-                _require_project(tp.project_id)
             return self._plan_to_dict(tp) if tp else None
 
     async def list_test_plans(self, project_id: str = None, offset: int = 0, limit: int = 50) -> dict:
@@ -293,7 +237,6 @@ class DBStore:
 
     async def create_execution(self, exec_data: dict) -> dict:
         project_id = exec_data.get('project_id', 'default')
-        _require_project(project_id, write=True)
         async with await self._session() as s:
             if await s.get(ProjectModel, project_id) is None:
                 raise HTTPException(404, 'Project not found')
@@ -325,12 +268,10 @@ class DBStore:
             return self._exec_to_dict(e)
 
     async def update_execution(self, exec_id: str, updates: dict, *, expected_version=None) -> Optional[dict]:
-        _scope()
         async with await self._session() as s:
             e = await s.get(ExecutionModel, exec_id)
             if not e:
                 return None
-            _require_project(e.project_id, write=True)
             _immutable_identity(e, updates)
             await _source(s, TestPlanModel, updates.get('test_plan_id', e.test_plan_id), e.project_id)
             await _versioned_update(s, ExecutionModel, e, updates, expected_version)
@@ -339,11 +280,8 @@ class DBStore:
             return self._exec_to_dict(e)
 
     async def get_execution(self, exec_id: str) -> Optional[dict]:
-        _scope()
         async with await self._session() as s:
             e = await s.get(ExecutionModel, exec_id)
-            if e:
-                _require_project(e.project_id)
             return self._exec_to_dict(e) if e else None
 
     async def list_executions(self, project_id: str = None, offset: int = 0, limit: int = 50) -> dict:
@@ -376,7 +314,6 @@ class DBStore:
 
     async def create_baseline(self, data: dict) -> dict:
         project_id = data['project_id']
-        _require_project(project_id, write=True)
         async with await self._session() as s:
             if await s.get(ProjectModel, project_id) is None:
                 raise HTTPException(404, 'Project not found')
@@ -421,7 +358,6 @@ class DBStore:
             return [self._baseline_to_dict(b) for b in result.scalars()]
 
     async def get_active_baseline(self, project_id: str, test_plan_id: str = None) -> Optional[dict]:
-        _require_project(project_id)
         async with await self._session() as s:
             await _source(s, TestPlanModel, test_plan_id, project_id)
             stmt = select(BaselineModel).where(
@@ -436,12 +372,10 @@ class DBStore:
             return self._baseline_to_dict(b) if b else None
 
     async def delete_baseline(self, baseline_id: int) -> bool:
-        _scope()
         async with await self._session() as s:
             b = await s.get(BaselineModel, baseline_id)
             if not b:
                 return False
-            _require_project(b.project_id, write=True)
             await s.delete(b)
             await s.commit()
             return True
@@ -449,12 +383,10 @@ class DBStore:
     async def set_active_baseline(self, baseline_id: int) -> Optional[dict]:
         """Atomically activate one baseline and deactivate its siblings in the
         same project/test-plan scope. Returns the activated baseline or None."""
-        _scope()
         async with await self._session() as s:
             b = await s.get(BaselineModel, baseline_id)
             if not b:
                 return None
-            _require_project(b.project_id, write=True)
             await self._deactivate_baselines(s, b.project_id, b.test_plan_id, keep_id=baseline_id)
             b.is_active = True
             await s.commit()
@@ -469,123 +401,6 @@ class DBStore:
             "is_active": b.is_active,
             "created_at": b.created_at.isoformat() if b.created_at else None,
         }
-
-    # ── Users ─────────────────────────────────────────────
-
-    async def get_user_by_username(self, username: str) -> Optional[UserModel]:
-        async with await self._session() as s:
-            stmt = select(UserModel).where(UserModel.username == username)
-            result = await s.execute(stmt)
-            return result.scalar_one_or_none()
-
-    async def create_user(self, username: str, password_hash: str, role: str = "viewer") -> dict:
-        async with await self._session() as s:
-            u = UserModel(username=username, password_hash=password_hash, role=role)
-            s.add(u)
-            await s.commit()
-            return {"id": u.id, "username": u.username, "role": u.role}
-
-    async def list_users(self) -> list[dict]:
-        async with await self._session() as s:
-            stmt = select(UserModel).order_by(UserModel.id)
-            result = await s.execute(stmt)
-            return [
-                {"id": u.id, "username": u.username, "role": u.role,
-                 "is_active": u.is_active, "created_at": u.created_at.isoformat() if u.created_at else None}
-                for u in result.scalars()
-            ]
-
-    async def deactivate_user(self, username: str) -> bool:
-        async with await self._session() as s:
-            stmt = select(UserModel).where(UserModel.username == username)
-            result = await s.execute(stmt)
-            u = result.scalar_one_or_none()
-            if not u:
-                return False
-            u.is_active = False
-            await s.commit()
-            return True
-
-    # ── Refresh Tokens ─────────────────────────────────────
-
-    async def store_refresh_token(self, username: str, token_hash: str, expires_at) -> None:
-        """Store a refresh token hash in the ApiTokenModel table."""
-        async with await self._session() as s:
-            user = (await s.execute(select(UserModel).where(UserModel.username == username))).scalar_one()
-            t = ApiTokenModel(
-                user_id=user.id,
-                name="refresh:" + token_hash,
-                token_hash=token_hash,
-                scopes=["refresh"],
-                expires_at=expires_at,
-            )
-            s.add(t)
-            await s.commit()
-
-    async def get_refresh_token(self, token_hash: str) -> Optional[dict]:
-        """Look up a refresh token by hash. Returns None if not found or revoked."""
-        async with await self._session() as s:
-            stmt = select(ApiTokenModel, UserModel.username).join(UserModel).where(
-                ApiTokenModel.token_hash == token_hash,
-                ApiTokenModel.name.like("refresh:%"),
-                ApiTokenModel.scopes == ["refresh"],
-            )
-            result = await s.execute(stmt)
-            row = result.one_or_none()
-            if not row:
-                return None
-            t, username = row
-            return {
-                "username": username,
-                "token_type": "refresh",
-                "expires_at": t.expires_at.isoformat() if t.expires_at else None,
-                "revoked": False,
-            }
-
-    async def rotate_refresh_token(self, old_hash: str, new_hash: str, expires_at) -> bool:
-        """Consume once and replace in one transaction; concurrent refresh cannot replay."""
-        async with await self._session() as s:
-            predicate = (ApiTokenModel.token_hash == old_hash, ApiTokenModel.name.like("refresh:%"),
-                         ApiTokenModel.scopes == ["refresh"],
-                         ApiTokenModel.expires_at > utc_now_naive())
-            token = (await s.execute(select(ApiTokenModel).where(*predicate))).scalar_one_or_none()
-            if token is None:
-                return False
-            user_id = token.user_id
-            family = token.name
-            consumed = await s.execute(update(ApiTokenModel).where(*predicate).values(scopes=["refresh_consumed"]))
-            if consumed.rowcount != 1:
-                await s.rollback()
-                return False
-            s.add(ApiTokenModel(user_id=user_id, name=family, scopes=["refresh"],
-                                token_hash=new_hash, expires_at=expires_at))
-            await s.commit()
-            return True
-
-    async def revoke_user_sessions(self, username: str) -> None:
-        async with await self._session() as s:
-            users = select(UserModel.id).where(UserModel.username == username)
-            await s.execute(delete(ApiTokenModel).where(ApiTokenModel.user_id.in_(users),
-                                                       ApiTokenModel.name.like("refresh:%")))
-            await s.commit()
-
-    async def delete_refresh_token(self, token_hash: str) -> None:
-        """Revoke the whole rotation family, even if logout carries the previous cookie."""
-        async with await self._session() as s:
-            family = (await s.execute(select(ApiTokenModel.name).where(
-                ApiTokenModel.token_hash == token_hash,
-                ApiTokenModel.name.like("refresh:%"),
-            ))).scalar_one_or_none()
-            if family:
-                await s.execute(delete(ApiTokenModel).where(ApiTokenModel.name == family))
-            await s.commit()
-
-    async def cleanup_expired_tokens(self) -> int:
-        """Delete expired tokens. Revoked sessions have already been removed."""
-        async with await self._session() as s:
-            result = await s.execute(delete(ApiTokenModel).where(ApiTokenModel.expires_at < utc_now_naive()))
-            await s.commit()
-            return result.rowcount
 
 
 # Module-level singleton

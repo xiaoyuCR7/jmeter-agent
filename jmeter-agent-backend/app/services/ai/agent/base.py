@@ -105,15 +105,6 @@ class BaseAgent:
         max_react_per_step: int = 5,
         session_id: Optional[str] = None,
     ):
-        from app.services.security_context import current_principal
-        principal = current_principal.get()
-        from app.services.project_scope import current_scope
-        authorization = current_scope()
-        self._access_session_key = authorization.session_key if authorization is not None else None
-        if session_id and principal:
-            identity = self._access_session_key if authorization is not None else principal.username
-            namespace = json.dumps([identity, name, session_id], ensure_ascii=False)
-            session_id = ('v3:' if authorization is not None else 'v2:') + hashlib.sha256(namespace.encode('utf-8')).hexdigest()
         self.name = name
         self.adapter = adapter
         self.tools = tools or ToolRegistry()
@@ -172,35 +163,17 @@ class BaseAgent:
     async def run(self, task: str, context: Optional[str] = None) -> AgentResult:
         return await self._run_guarded(task, lambda: self._run_impl(task, context))
 
-    async def _run_guarded(self, task: str, operation: Callable[[], Awaitable[AgentResult]],
-                           *, _analysis: bool = False) -> AgentResult:
+    async def _run_guarded(self, task: str, operation: Callable[[], Awaitable[AgentResult]]) -> AgentResult:
         """Serialize each conversation; reject overlapping writers before mutating memory."""
-        from app.services.project_scope import refresh_scope, ACCESS_CHANGED
-        authorization = await refresh_scope()
-        if self._access_session_key != (authorization.session_key if authorization is not None else None):
-            return AgentResult(False, task, error=ACCESS_CHANGED)
         if (self._run_active or (self.session_id and self.session_id in BaseAgent._active_sessions)
                 or (self._stream_runner is not None and self._stream_runner is not asyncio.current_task())):
             return AgentResult(False, task, error='This session already has a running task; wait or cancel it first')
-        from app.services.ai.operation_runtime import agent_operations
-        from app.services.coordination import CoordinationError
-        try:
-            ownership = agent_operations.acquire(self.session_id, analysis=_analysis)
-        except CoordinationError:
-            return AgentResult(False, task, error='Agent resources are busy or coordination is unavailable; no work started')
         self._run_active = True
         if self.session_id:
             BaseAgent._active_sessions.add(self.session_id)
         try:
-            if ownership is None:
-                return await operation()
-            with ownership.activate():
-                from app.services.ai.analysis_receipts import bind_current_operation
-                await bind_current_operation(ownership)
-                return await operation()
+            return await operation()
         finally:
-            if ownership is not None:
-                ownership.close()
             self._run_active = False
             if self.session_id:
                 BaseAgent._active_sessions.discard(self.session_id)
@@ -221,13 +194,11 @@ class BaseAgent:
 
         # ── Concurrency guard ─────────────────────────────────
         sem = self._get_concurrency_semaphore()
-        from app.services.ai.operation_runtime import current_operation
         acquired = False
         try:
             async with asyncio.timeout(120):
-                if current_operation() is None:
-                    await sem.acquire()
-                    acquired = True
+                await sem.acquire()
+                acquired = True
         except asyncio.TimeoutError:
             logger.warning(f"[{self.name}] Timed out waiting for agent slot. "
                           f"Active: {settings.AGENT_MAX_CONCURRENT - sem._value}/{settings.AGENT_MAX_CONCURRENT}")
@@ -499,8 +470,6 @@ class BaseAgent:
             # Persist memory if session_id is provided
             if self.session_id and memory_writable:
                 try:
-                    from app.services.project_scope import refresh_scope
-                    await refresh_scope()
                     if await self.memory.save():
                         self._emit("memory_saved", f"Saved conversation memory for session {self.session_id}")
                     else:

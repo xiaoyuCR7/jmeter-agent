@@ -1,4 +1,4 @@
-"""One persisted execution lifecycle shared by HTTP, agents, MCP and schedules.
+"""One persisted execution lifecycle shared by HTTP, agents and MCP.
 
 JMX is copied byte-for-byte; no parsing, rebuilding or script stripping occurs.
 This is bookkeeping and task ownership, not a sandbox for untrusted JMeter code.
@@ -20,11 +20,22 @@ from app.models.schemas import (
 from app.services.db_store import db_store
 from app.services.storage import store
 from app.services.jmeter.executor import get_executor
-from app.services.project_scope import (
-    require_path, require_project, require_execution, require_plan, refresh_scope,
-)
 
 logger = logging.getLogger(__name__)
+
+
+def _directory_project(path):
+    """Plans live in TEST_PLANS_DIR/<project_id>/; infer that project when it exists."""
+    root = Path(settings.TEST_PLANS_DIR).resolve()
+    try:
+        relative = Path(path).resolve().relative_to(root)
+    except ValueError:
+        return None
+    if len(relative.parts) < 2:
+        return None
+    return relative.parts[0] if relative.parts[0] in store.projects else None
+
+
 TERMINAL = {TestExecutionStatus.COMPLETED, TestExecutionStatus.FAILED, TestExecutionStatus.CANCELLED}
 
 
@@ -56,7 +67,6 @@ async def persist_project(project: ProjectInfo, *, create=None):
         # pass an explicit create/update intent so stale cache cannot resurrect.
         persisted = await db_store.create_project(data)
     project.storage_version = persisted['storage_version']
-    await refresh_scope()
     store.set_project(project.id, project.model_copy(deep=True))
 
 
@@ -73,7 +83,6 @@ async def persist_execution(execution: TestExecutionInfo, *, create=False):
         if not persisted:
             raise LookupError(f'Execution not registered: {execution.id}')
     execution.storage_version = persisted['storage_version']
-    await refresh_scope()
     store.set_execution(execution.id, execution.model_copy(deep=True))
 
 
@@ -99,33 +108,30 @@ class ExecutionLifecycle:
         """
         if self._tasks.get(execution.id) is not asyncio.current_task():
             raise RuntimeError('Execution cleanup is not owned by this task')
-        from app.services.project_scope import internal_scope
         fields = ('status', 'start_time', 'end_time', 'error_message', 'report_status', 'report_error')
         updates = {name: getattr(execution, name) for name in fields}
         updates['status'] = execution.status.value
-        with internal_scope():
-            existing = await db_store.get_execution(execution.id)
-            if existing is None or existing['project_id'] != execution.project_id:
-                raise RuntimeError('Owned execution registration changed')
-            updates['storage_version'] = execution.storage_version
-            persisted = await db_store.update_execution(execution.id, updates)
-            execution.storage_version = persisted['storage_version']
-            cached = store.get_execution(execution.id)
-            if cached is not None:
-                cached = cached.model_copy(deep=True)
-                for name in fields:
-                    setattr(cached, name, getattr(execution, name))
-                cached.storage_version = execution.storage_version
-                store.set_execution(execution.id, cached)
+        existing = await db_store.get_execution(execution.id)
+        if existing is None or existing['project_id'] != execution.project_id:
+            raise RuntimeError('Owned execution registration changed')
+        updates['storage_version'] = execution.storage_version
+        persisted = await db_store.update_execution(execution.id, updates)
+        execution.storage_version = persisted['storage_version']
+        cached = store.get_execution(execution.id)
+        if cached is not None:
+            cached = cached.model_copy(deep=True)
+            for name in fields:
+                setattr(cached, name, getattr(execution, name))
+            cached.storage_version = execution.storage_version
+            store.set_execution(execution.id, cached)
 
     async def register_plan(self, plan: TestPlanInfo):
         validate_id(plan.id)
         validate_id(plan.project_id)
-        require_project(plan.project_id, write=True)
         path = await self._validate_source(plan.jmx_path)
-        owners = require_path(path, write=True)
-        if owners is not None and owners != {plan.project_id}:
-            raise HTTPException(409, 'Plan project does not match source file ownership')
+        owner = _directory_project(path)
+        if owner is not None and owner != plan.project_id:
+            raise HTTPException(409, 'Plan project does not match source file directory')
         plan = plan.model_copy(update={'jmx_path': str(path)}, deep=True)
         if not await db_store.get_project(plan.project_id):
             cached_project = store.get_project(plan.project_id)
@@ -144,13 +150,10 @@ class ExecutionLifecycle:
         if persisted is None:
             raise LookupError(f'Test plan not registered: {plan.id}')
         plan.storage_version = persisted['storage_version']
-        await refresh_scope()
         store.set_test_plan(plan.id, plan.model_copy(deep=True))
         return plan
 
     async def _validate_source(self, jmx_path):
-        await refresh_scope()
-        require_path(jmx_path)
         path = Path(jmx_path).expanduser().resolve(strict=True)
         if not path.is_file() or path.suffix.lower() != '.jmx':
             raise ValueError('Execution source must be a .jmx file')
@@ -170,15 +173,10 @@ class ExecutionLifecycle:
     async def register_path(self, jmx_path, *, project_id='default', name=None,
                             test_config=None, endpoints_count=0):
         path = await self._validate_source(jmx_path)
-        owners = require_path(path, write=True)
-        if owners is not None:
-            if len(owners) != 1:
-                raise HTTPException(409, 'Source file has conflicting project ownership')
-            owner = next(iter(owners))
+        owner = _directory_project(path)
+        if owner is not None:
             if project_id not in (None, 'default', owner):
-                raise HTTPException(409, 'Requested project differs from source file ownership')
-            # Default tool arguments cannot reclassify private snapshots or
-            # unregistered files inside a known private project as shared.
+                raise HTTPException(409, 'Requested project differs from source file directory')
             project_id = owner
         async with self._registration_lock:
             plans = await db_store.list_test_plans(limit=100000)
@@ -215,9 +213,6 @@ class ExecutionLifecycle:
             plan = await self.register_plan(plan)
         else:
             plan = await self.register_path(str(path), project_id=project_id, test_config=test_config)
-        await refresh_scope()
-        require_project(plan.project_id, write=True)
-        require_path(path)
         root = Path(settings.REPORTS_DIR).resolve()
         root.mkdir(parents=True, exist_ok=True)
         run_dir = root / execution_id
@@ -259,8 +254,6 @@ class ExecutionLifecycle:
 
     async def run(self, execution_id, *, remote_engines=None, postprocess=None,
                   before_execute=None, progress_callback=None, executor=None):
-        await refresh_scope()
-        require_execution(execution_id, write=True)
         execution = store.get_execution(execution_id)
         if execution is None:
             raise LookupError(f'Execution not found: {execution_id}')
@@ -293,8 +286,6 @@ class ExecutionLifecycle:
                     progress_callback(pct)
             executor = executor or get_executor()
             self._executors[execution_id] = executor
-            await refresh_scope()
-            require_execution(execution_id, write=True)
             result = await executor.execute(
                 execution.jmx_path, execution_id, progress_callback=progress,
                 remote_engines=remote_engines,
@@ -419,8 +410,6 @@ class ExecutionLifecycle:
         return execution
 
     async def cancel(self, execution_id):
-        await refresh_scope()
-        require_execution(execution_id, write=True)
         validate_id(execution_id)
         execution = store.get_execution(execution_id)
         if execution is None or execution.status in TERMINAL:
@@ -447,9 +436,7 @@ class ExecutionLifecycle:
 
     async def shutdown(self):
         self._closed = True
-        from app.services.project_scope import internal_scope
-        with internal_scope():
-            await self._shutdown_owned()
+        await self._shutdown_owned()
 
     async def _shutdown_owned(self):
         failed = []

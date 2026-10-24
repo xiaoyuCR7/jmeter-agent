@@ -47,16 +47,6 @@ describe('useI18n', () => {
     expect(t('non.existent.key', null, 'fallback')).toBe('fallback')
   })
 
-  it('should have all schedule translations', () => {
-    const { t } = useI18n()
-    expect(t('schedules.title')).toBe('定时任务')
-    expect(t('schedules.subtitle')).toBe('管理定时执行的测试计划，支持Cron表达式配置')
-    expect(t('schedules.create')).toBe('创建任务')
-    expect(t('schedules.cron')).toBe('Cron表达式')
-    expect(t('schedules.nextRun')).toBe('下次执行')
-    expect(t('schedules.lastRun')).toBe('上次执行')
-  })
-
   it('should have all baseline translations', () => {
     const { t } = useI18n()
     expect(t('baselines.title')).toBe('性能基线')
@@ -71,7 +61,6 @@ describe('useI18n', () => {
     expect(t('report.compare')).toBe('版本对比')
     expect(t('report.current')).toBe('当前')
     expect(t('report.selectCompare')).toBe('选择对比执行记录')
-    expect(t('report.driftDetection')).toBe('性能漂移检测')
   })
 
   it('should set language correctly', () => {

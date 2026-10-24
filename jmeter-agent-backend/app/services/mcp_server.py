@@ -69,7 +69,7 @@ class MCPPrompt:
 
 @dataclass
 class MCPSession:
-    """One authenticated legacy SSE connection; never a business-event subscriber."""
+    """One legacy SSE connection; never a business-event subscriber."""
     id: str
     owner: str
     queue: asyncio.Queue
@@ -78,7 +78,6 @@ class MCPSession:
     seen_ids: set = field(default_factory=set)
     closed: bool = False
     server: Any = None
-    mailbox: Any = None
     route_identity: Any = None
     route_generation: Optional[str] = None
 
@@ -194,16 +193,6 @@ class MCPServer:
                 {"name": "compare_baseline", "description": "Whether to compare against baseline", "required": False},
             ],
         )
-        self.register_prompt(
-            "autotune",
-            "Autonomously find optimal test parameters",
-            [
-                {"name": "goal", "description": "Optimization goal, e.g. 'find max safe concurrency with P99 < 500ms'", "required": True},
-                {"name": "jmx_path", "description": "Path to the test plan to use", "required": True},
-                {"name": "max_iterations", "description": "Max optimization iterations (default 10)", "required": False},
-            ],
-        )
-
     # ── JSON-RPC Request Handling ────────────────────────
 
     def _parse_request(self, raw_body):
@@ -269,14 +258,10 @@ class MCPServer:
             if tasks:
                 await asyncio.gather(*tasks, return_exceptions=True)
         finally:
-            try:
-                if session.mailbox is not None:
-                    await session.mailbox.close(session)
-            finally:
-                session.pending.clear()
-                session.seen_ids.clear()
-                while not session.queue.empty():
-                    session.queue.get_nowait()
+            session.pending.clear()
+            session.seen_ids.clear()
+            while not session.queue.empty():
+                session.queue.get_nowait()
 
     def submit(self, session: MCPSession, raw_body):
         """Accept work without awaiting a tool. Only the owning SSE stream gets replies."""
@@ -379,7 +364,7 @@ class MCPServer:
                 "JMeter Agent MCP Server — AI-driven performance testing.\n"
                 "Use tools to create test plans, execute tests, analyze results.\n"
                 "Use resources to browse projects, test plans, executions, baselines.\n"
-                "Use prompts for common workflows like autotune and report analysis."
+                "Use prompts for common workflows like report analysis."
             ),
         }
 
@@ -529,17 +514,6 @@ class MCPServer:
                 f"请分析这个 JMeter 测试报告: {jtl}\n"
                 f"与基线对比: {compare}\n"
                 f"请给出：整体评估、瓶颈分析、优化建议、SLA判定"
-            )
-        elif name == "autotune":
-            goal = arguments.get("goal", "")
-            jmx = arguments.get("jmx_path", "")
-            max_iter = arguments.get("max_iterations", "10")
-            text = (
-                f"AutoTune 目标: {goal}\n"
-                f"测试计划: {jmx}\n"
-                f"最大迭代次数: {max_iter}\n"
-                f"请使用 execute_test 和 evaluate_sla 工具进行二分搜索优化，"
-                f"每次迭代后分析结果并调整参数，直到找到最优配置。"
             )
         else:
             text = f"Prompt: {name}"

@@ -4,7 +4,6 @@ import os
 import asyncio
 import math
 from app.core.config import settings, safe_path
-from app.services import project_scope
 from app.services.jmeter.resource_monitor import (
     ResourceMonitor,
     get_resource_monitor,
@@ -234,8 +233,6 @@ async def selfheal_test(jmx_path: str, failed_execution_id: str,
     from app.services.execution_lifecycle import validate_id
     validate_id(failed_execution_id)
     jmx_path = safe_path(jmx_path, [settings.TEST_PLANS_DIR])
-    project_scope.require_path(jmx_path, write=True)
-    project_scope.require_execution(failed_execution_id)
     for filename in ('result.jtl', 'jmeter.log'):
         safe_path(os.path.join(settings.REPORTS_DIR, failed_execution_id, filename), [settings.REPORTS_DIR])
     from app.services.ai.agents.selfheal_agent import selfheal
@@ -262,7 +259,6 @@ async def detect_anomalies(execution_id: str) -> dict:
     from app.core.config import settings
     from app.services.execution_lifecycle import validate_id
     validate_id(execution_id)
-    project_scope.require_execution(execution_id)
     jtl_path = safe_path(os.path.join(settings.REPORTS_DIR, execution_id, "result.jtl"), [settings.REPORTS_DIR])
     if not os.path.exists(jtl_path):
         return {"error": f"JTL not found for execution {execution_id}"}
@@ -271,100 +267,6 @@ async def detect_anomalies(execution_id: str) -> dict:
     summary = await asyncio.to_thread(parser.parse_jtl, jtl_path)
     from app.services.ml_analysis import ml_detector
     report = ml_detector.analyze_timeline(summary.timeline_segments)
-    return report.model_dump()
-
-
-# ── Cost Estimation ───────────────────────────────────────
-
-async def estimate_test_cost(concurrent_users: int, duration_seconds: int,
-                             avg_response_time_ms: float = 200,
-                             is_distributed: bool = False,
-                             remote_engines: int = 0) -> dict:
-    """Estimate resource usage and cost before running a test.
-
-    Args:
-        concurrent_users: Number of virtual users.
-        duration_seconds: Test duration.
-        avg_response_time_ms: Expected average response time.
-        is_distributed: Whether this is a distributed test.
-        remote_engines: Number of remote engines.
-    """
-    from app.services.insights_engine import cost_estimator
-    est = cost_estimator.estimate(
-        concurrent_users=concurrent_users,
-        duration_seconds=duration_seconds,
-        avg_response_time_ms=avg_response_time_ms,
-        is_distributed=is_distributed,
-        remote_engines=remote_engines,
-    )
-    return est.model_dump()
-
-
-# ── Drift Detection ───────────────────────────────────────
-
-async def detect_performance_drift(project_id: str = "default", days: int = 30) -> dict:
-    """Detect performance drift over time — finds gradual degradation.
-
-    Args:
-        project_id: Project to analyze.
-        days: Number of days to look back.
-    """
-    from datetime import datetime, timedelta, timezone
-    from app.services.storage import store
-    from app.services.insights_engine import drift_detector as dd
-
-    if not 1 <= days <= 3650:
-        raise ValueError('days must be within [1, 3650]')
-    project_scope.require_project(project_id)
-    history = []
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    for execution in list(store.executions.values()):
-        if execution.project_id != project_id or execution.status != 'completed' or not execution.start_time:
-            continue
-        # Legacy executions use datetime.now(): naive timestamps are server-local.
-        date = execution.start_time.astimezone(timezone.utc)
-        summary = execution.summary
-        if date < cutoff or not summary or not summary.total_requests:
-            continue
-        history.append({'date': date.isoformat(), **{key: getattr(summary, key) for key in
-            ('p99_response_time', 'avg_response_time', 'error_rate', 'throughput')}})
-    report = dd.analyze(history)
-    return report.model_dump()
-
-
-# ── Cross-Version Comparison ──────────────────────────────
-
-async def compare_versions(baseline_execution_id: str, target_execution_id: str,
-                           baseline_name: str = "baseline",
-                           target_name: str = "current") -> dict:
-    """Deep comparison between two test runs with root cause analysis.
-
-    Args:
-        baseline_execution_id: ID of the baseline execution.
-        target_execution_id: ID of the current execution.
-        baseline_name: Label for baseline.
-        target_name: Label for current.
-    """
-    import os
-    from app.core.config import settings
-    from app.services.jmeter.report_parser import ReportParser
-    from app.services.insights_engine import version_comparator as vc
-
-    parser = ReportParser()
-    from app.services.execution_lifecycle import validate_id
-    validate_id(baseline_execution_id)
-    validate_id(target_execution_id)
-    project_scope.require_execution(baseline_execution_id)
-    project_scope.require_execution(target_execution_id)
-    b_jtl = safe_path(os.path.join(settings.REPORTS_DIR, baseline_execution_id, "result.jtl"), [settings.REPORTS_DIR])
-    t_jtl = safe_path(os.path.join(settings.REPORTS_DIR, target_execution_id, "result.jtl"), [settings.REPORTS_DIR])
-    if not os.path.exists(b_jtl):
-        return {"error": f"Baseline JTL not found: {baseline_execution_id}"}
-    if not os.path.exists(t_jtl):
-        return {"error": f"Target JTL not found: {target_execution_id}"}
-    baseline = (await asyncio.to_thread(parser.parse_jtl, b_jtl)).model_dump()
-    target = (await asyncio.to_thread(parser.parse_jtl, t_jtl)).model_dump()
-    report = vc.compare(baseline, target, baseline_name, target_name)
     return report.model_dump()
 
 
@@ -543,49 +445,6 @@ resource_tools = [
             "required": ["execution_id"],
         },
         handler=detect_anomalies,
-    ),
-    Tool(
-        name="estimate_test_cost",
-        description="Estimate resource usage (requests, bandwidth, cloud cost, JVM heap) before running a test.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "concurrent_users": {"type": "integer", "description": "Number of virtual users"},
-                "duration_seconds": {"type": "integer", "description": "Test duration in seconds"},
-                "avg_response_time_ms": {"type": "number", "description": "Expected average response time (default 200)"},
-                "is_distributed": {"type": "boolean", "description": "Is this a distributed test?"},
-                "remote_engines": {"type": "integer", "description": "Number of remote engines"},
-            },
-            "required": ["concurrent_users", "duration_seconds"],
-        },
-        handler=estimate_test_cost,
-    ),
-    Tool(
-        name="detect_performance_drift",
-        description="Detect gradual performance degradation over time using linear regression. Analyzes 30-day trend and projects future values.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "project_id": {"type": "string", "description": "Project ID (default: 'default')"},
-                "days": {"type": "integer", "description": "Days to look back (default 30)"},
-            },
-        },
-        handler=detect_performance_drift,
-    ),
-    Tool(
-        name="compare_versions",
-        description="Deep comparison between two test runs with root cause analysis hints. Identifies specific metrics that degraded and suggests possible causes.",
-        parameters={
-            "type": "object",
-            "properties": {
-                "baseline_execution_id": {"type": "string", "description": "ID of the baseline execution"},
-                "target_execution_id": {"type": "string", "description": "ID of the current execution"},
-                "baseline_name": {"type": "string", "description": "Label for baseline"},
-                "target_name": {"type": "string", "description": "Label for current"},
-            },
-            "required": ["baseline_execution_id", "target_execution_id"],
-        },
-        handler=compare_versions,
     ),
     Tool(
         name="parse_dashboard_data",

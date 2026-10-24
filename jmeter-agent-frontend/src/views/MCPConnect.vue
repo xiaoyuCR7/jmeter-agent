@@ -35,7 +35,7 @@
       <template #header><span><el-icon class="header-icon"><Connection /></el-icon> {{ t('mcpConnect.config') }}</span><el-tag size="small" type="success" style="margin-left:8px">MCP 2024-11-05</el-tag></template>
 
       <el-alert type="info" :closable="false" style="margin-bottom:16px">
-        <template #title>{{ currentLang === 'en' ? 'Legacy HTTP+SSE (2024-11-05). Requires an SSE client and a valid Bearer access token on GET and POST; Streamable HTTP is not supported. Replace YOUR_ACCESS_TOKEN locally and never commit it.' : '旧版 HTTP+SSE（2024-11-05）。客户端须支持 SSE，GET 和 POST 均须携带有效 Bearer 访问令牌；不支持 Streamable HTTP。请在本地替换 YOUR_ACCESS_TOKEN，勿提交真实令牌。' }}</template>
+        <template #title>{{ currentLang === 'en' ? 'Legacy HTTP+SSE (2024-11-05); the client must support SSE. Local no-login mode: no access token is needed, and the server only listens on this machine.' : '旧版 HTTP+SSE（2024-11-05），客户端须支持 SSE。本地免登录模式：无需访问令牌，服务仅监听本机。' }}</template>
       </el-alert>
 
       <!-- AI Tool Tabs -->
@@ -149,13 +149,13 @@ async function loadStatus() {
 function getConfig(tool: string): string {
   const base = origin.value
   if (tool === 'generic') {
-    return `# Terminal 1: keep this authenticated SSE connection open.
-curl -N -H "Authorization: Bearer YOUR_ACCESS_TOKEN" "${base}/api/v1/mcp/sse"
+    return `# Terminal 1: keep this SSE connection open.
+curl -N "${base}/api/v1/mcp/sse"
 
 # Terminal 2: copy the session_id from the endpoint event above.
 SESSION_ENDPOINT="${base}/api/v1/mcp/messages?session_id=SESSION_ID_FROM_ENDPOINT"
 mcp_post() {
-  curl -f -X POST "$SESSION_ENDPOINT" -H "Content-Type: application/json" -H "Authorization: Bearer YOUR_ACCESS_TOKEN" -d "$1"
+  curl -f -X POST "$SESSION_ENDPOINT" -H "Content-Type: application/json" -d "$1"
 }
 mcp_post '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
 
@@ -167,7 +167,6 @@ mcp_post '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
   const entry = {
     ...(tool === 'cursor' ? {} : { type: 'sse' }),
     url: mcpUrl.value,
-    headers: { Authorization: 'Bearer YOUR_ACCESS_TOKEN' },
   }
   return JSON.stringify({ [tool === 'vscode' ? 'servers' : 'mcpServers']: { 'jmeter-agent': entry } }, null, 2)
 }

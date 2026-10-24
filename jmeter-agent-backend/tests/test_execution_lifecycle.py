@@ -49,17 +49,6 @@ def service():
 
 
 @pytest.mark.asyncio
-async def test_shutdown_owned_prepared_run_needs_no_request_scope(env):
-    from app.services.project_scope import bind_scope
-    lifecycle, _ = service()
-    prepared = await lifecycle.prepare(str(env.path), 'shutdown-without-user')
-    with bind_scope(None):
-        await lifecycle.shutdown()
-    assert (await env.db.get_execution(prepared.id))['status'] == 'cancelled'
-    assert not lifecycle._prepared
-
-
-@pytest.mark.asyncio
 async def test_execution_lifecycle_can_restart_after_clean_shutdown(env):
     lifecycle, _ = service()
     await lifecycle.shutdown()
@@ -97,16 +86,12 @@ async def test_revoked_execution_still_records_owned_process_termination(env, mo
 
 
 @pytest.mark.asyncio
-async def test_submitted_task_revoked_before_first_run_does_not_remain_pending(env, monkeypatch):
-    from fastapi import HTTPException
+async def test_submitted_task_failing_before_launch_does_not_remain_pending(env, monkeypatch):
     lifecycle, module = service()
-    actual_prepare = lifecycle.prepare
-    async def prepare_then_revoke(*args, **kwargs):
-        execution = await actual_prepare(*args, **kwargs)
-        monkeypatch.setattr(module, 'refresh_scope', AsyncMock(side_effect=HTTPException(403, 'revoked')))
-        return execution
-    monkeypatch.setattr(lifecycle, 'prepare', prepare_then_revoke)
-    prepared = await lifecycle.submit(str(env.path), 'revoked-before-run')
+    def unavailable():
+        raise RuntimeError('JMeter unavailable')
+    monkeypatch.setattr(module, 'get_executor', unavailable)
+    prepared = await lifecycle.submit(str(env.path), 'failed-before-run')
     task = lifecycle._tasks[prepared.id]
     await asyncio.gather(task, return_exceptions=True)
     assert (await env.db.get_execution(prepared.id))['status'] == 'failed'
@@ -331,14 +316,6 @@ async def test_http_and_agent_use_same_lifecycle(env, monkeypatch):
     response = await jmeter.execute_test(str(env.path), skip_resource_check=True)
     assert response['execution_id'] == 'shared'
     fake.execute.assert_awaited_once()
-
-
-def test_all_direct_execution_adapters_use_lifecycle():
-    root = Path(__file__).parents[1] / 'app'
-    for relative in ('services/scheduler.py', 'services/jmeter/test_scheduler.py',
-                     'services/ai/agents/selfheal_agent.py', 'services/ai/agents/autotune_agent.py'):
-        source = (root / relative).read_text(encoding='utf-8')
-        assert 'execution_lifecycle.' in source, relative
 
 
 @pytest.mark.asyncio

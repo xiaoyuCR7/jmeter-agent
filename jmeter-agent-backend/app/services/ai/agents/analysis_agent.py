@@ -22,8 +22,6 @@ from typing import Optional, Callable, Awaitable, AsyncIterator
 from pydantic import TypeAdapter
 
 from app.services.ai.adapters.base import BaseAIAdapter
-from app.services.ai.analysis_runtime import run_analysis_sync
-from app.services.ai.analysis_receipts import checkpoint, ReceiptError
 from app.services.ai.memory.read_errors import LedgerReadError
 from app.services.ai.agent.base import BaseAgent, AGENT_SAFETY_RULES
 from app.services.ai.agent.types import AgentEvent, AgentResult, AgentState
@@ -140,7 +138,7 @@ class AnalysisAgent(BaseAgent):
         self.retriever = retriever or RAGRetriever()
         self.archiver = archiver or RAGArchiver()
         self._analysis_active = False
-        self._analysis_lease = None
+        self._analysis_task: Optional[asyncio.Task] = None
 
     # === Public analysis methods ===
 
@@ -198,50 +196,21 @@ class AnalysisAgent(BaseAgent):
         return super()._emit(event_type, message, data)
 
     async def run_analysis(self, task: str, evidence: dict, context: Optional[str] = None) -> AgentResult:
-        return await self._run_guarded(task, lambda: self._run_admitted_analysis(task, evidence, context), _analysis=True)
+        return await self._run_guarded(task, lambda: self._run_admitted_analysis(task, evidence, context))
 
     async def _run_admitted_analysis(self, task: str, evidence: dict, context: Optional[str]) -> AgentResult:
-        from app.services.ai.analysis_runtime import analysis_runtime
-
-        lease = analysis_runtime.try_acquire()
-        if lease is None:
-            code = 'analysis_busy' if analysis_runtime.accepting else 'analysis_unavailable'
-            message = ('Analysis capacity is busy; retry later' if analysis_runtime.accepting else
-                       'Analysis service is stopping; retry after restart')
-            self._events.clear()
-            self._state = AgentState.FAILED
-            self._emit('error', message, {'phase': 'admission', 'error_code': code})
-            return AgentResult(False, task, error=message, events=self._events, analysis={
-                'execution_id': evidence['execution_id'], 'success': False, 'error': message,
-                'phase': 'admission', 'error_code': code,
-            })
-
-        self._analysis_lease = lease
+        self._analysis_task = asyncio.current_task()
         try:
-            with lease.activate():
-                return await self._run_analysis_impl(task, evidence, context)
+            return await self._run_analysis_impl(task, evidence, context)
         finally:
-            self._analysis_lease = None
-            lease.close()
+            self._analysis_task = None
 
     def cancel(self) -> None:
         super().cancel()
-        lease = self._analysis_lease
-        owner = lease.owner if lease else None
-        # Interrupt registered reads/postprocessing; the lease still owns running threads.
-        if owner is not None and not owner.done():
-            try:
-                current = asyncio.current_task()
-            except RuntimeError:
-                current = None
-            if owner is not current:
-                if current is not None and current.get_loop() is owner.get_loop():
-                    owner.cancel()
-                else:
-                    def cancel_owner():
-                        if self._analysis_lease is lease and not owner.done():
-                            owner.cancel()
-                    owner.get_loop().call_soon_threadsafe(cancel_owner)
+        owner = self._analysis_task
+        # Interrupt pending reads/postprocessing as well as the model loop.
+        if owner is not None and not owner.done() and owner is not asyncio.current_task():
+            owner.get_loop().call_soon_threadsafe(owner.cancel)
 
     async def run_analysis_stream(self, task: str, evidence: dict,
                                   context: Optional[str] = None) -> AsyncIterator[AgentEvent]:
@@ -261,7 +230,6 @@ class AnalysisAgent(BaseAgent):
             nonlocal result
             if self._cancel_flag:
                 raise asyncio.CancelledError()
-            await checkpoint('model')
             result = await self._run_impl(augmented_task, context, _preserve_events=True)
             if self._cancel_flag:
                 raise asyncio.CancelledError()
@@ -270,7 +238,6 @@ class AnalysisAgent(BaseAgent):
             return result
 
         try:
-            await checkpoint('preparation')
             self._emit('analysis_phase', 'Preparing registered evidence', {'phase': 'preparation'})
             analysis = await self.analyze_with_rag(
                 jtl_path=evidence['jtl_path'], execution_id=evidence['execution_id'],
@@ -419,7 +386,6 @@ class AnalysisAgent(BaseAgent):
 
         if result.success:
             try:
-                await checkpoint('postprocessing')
                 structured = await self._extract_structured_analysis(
                     result.output,
                     fact=fact,
@@ -427,18 +393,15 @@ class AnalysisAgent(BaseAgent):
                 validation = fact_validator.validate(result.output, fact)
                 if _runner and self._cancel_flag:
                     raise asyncio.CancelledError()
-                await checkpoint('archive')
                 archive_result = await self.archiver.archive_analysis_result(
                     structured_analysis=structured,
                     fact=fact,
                 )
-                await checkpoint('archive', archive=archive_result)
                 if archive_result.get('errors'):
                     postprocessing_error = 'Analysis archival failed: ' + '; '.join(archive_result['errors'])
 
                 # Step 6 requires persisted evidence, not just a computed/ad-hoc fact sheet.
                 if archive_result.get('fact_archived') and not (_runner and self._cancel_flag):
-                    await checkpoint('evaluation')
                     evaluated = await hypothesis_ledger.evaluate_module_hypotheses(
                         module=module,
                         new_execution_id=fact.execution_id,
@@ -446,8 +409,6 @@ class AnalysisAgent(BaseAgent):
                     )
                     logger.info(f"Evaluated {len(evaluated)} hypotheses for {module}")
 
-            except ReceiptError:
-                raise
             except LedgerReadError:
                 failure = 'Hypothesis evaluation read failed; earlier writes may have completed'
                 postprocessing_error = f"{postprocessing_error}; {failure}" if postprocessing_error else failure
@@ -506,7 +467,7 @@ class AnalysisAgent(BaseAgent):
         if jtl_path and os.path.exists(jtl_path):
             # compute_from_jtl parses the whole JTL synchronously — offload it
             # so the event loop stays responsive during analysis.
-            return await run_analysis_sync(
+            return await asyncio.to_thread(
                 fact_ledger.compute_from_jtl,
                 jtl_path=jtl_path,
                 execution_id=execution_id,
@@ -529,7 +490,7 @@ class AnalysisAgent(BaseAgent):
         # Last resort: parse from reports/{execution_id}/result.jtl
         inferred_jtl = safe_path(os.path.join(settings.REPORTS_DIR, execution_id, "result.jtl"), [settings.REPORTS_DIR])
         if os.path.exists(inferred_jtl):
-            return await run_analysis_sync(
+            return await asyncio.to_thread(
                 fact_ledger.compute_from_jtl,
                 jtl_path=inferred_jtl,
                 execution_id=execution_id,

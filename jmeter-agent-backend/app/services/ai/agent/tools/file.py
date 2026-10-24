@@ -5,7 +5,6 @@ import json
 import asyncio
 
 from app.core.config import settings
-from app.services import project_scope
 from app.services.ai.agent.tool_registry import Tool
 
 def _resolve_path(path: str, *, writable: bool = False, allow_root_listing: bool = False) -> str:
@@ -26,7 +25,6 @@ def _resolve_path(path: str, *, writable: bool = False, allow_root_listing: bool
         root = os.path.realpath(os.path.abspath(root))
         try:
             if os.path.normcase(os.path.commonpath([abs_path, root])) == os.path.normcase(root):
-                project_scope.require_path(abs_path, write=writable, allow_root_listing=allow_root_listing)
                 return abs_path
         except ValueError:
             continue
@@ -139,8 +137,6 @@ async def list_directory(directory: str, pattern: str = "*") -> dict:
     try:
         for entry in os.listdir(safe_dir):
             entry_path = os.path.join(safe_dir, entry)
-            if not project_scope.can_path(entry_path):
-                continue
             if pattern == "*" or fnmatch.fnmatch(entry, pattern):
                 items.append({
                     "name": entry,

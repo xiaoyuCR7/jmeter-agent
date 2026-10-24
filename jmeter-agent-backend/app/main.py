@@ -19,7 +19,6 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from app.api.project_boundary import AuthorizedReportFiles
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
@@ -40,50 +39,17 @@ async def lifespan(app: FastAPI):
     # Sync in-memory cache from persisted DB data
     logger.info("Syncing in-memory store from database...")
     from app.services.storage import store
-    from app.services.project_scope import internal_scope
-    with internal_scope():
-        await store.sync_from_dbstore()
+    await store.sync_from_dbstore()
     logger.info("Store synced from database.")
 
-    # ── Security checks ──────────────────────────────────────
-    if settings.JWT_SECRET == "change-me-in-production-use-env-var":
-        if not settings.DEBUG:
-            raise RuntimeError(
-                "FATAL: JWT_SECRET is using the default value. "
-                "Set JWT_SECRET environment variable before running in production mode."
-            )
-        logger.warning(
-            "SECURITY: JWT_SECRET is using the default value. "
-            "Set JWT_SECRET environment variable for production use."
-        )
-    if settings.DEFAULT_ADMIN_PASSWORD == "admin123":
-        if not settings.DEBUG:
-            raise RuntimeError(
-                "FATAL: DEFAULT_ADMIN_PASSWORD is 'admin123'. "
-                "Set DEFAULT_ADMIN_PASSWORD environment variable before running in production mode."
-            )
-        logger.warning(
-            "SECURITY: DEFAULT_ADMIN_PASSWORD is using the default value. "
-            "Change it via DEFAULT_ADMIN_PASSWORD env var for production use."
-        )
     if "*" in settings.CORS_ORIGINS:
         raise RuntimeError("CORS_ORIGINS must list trusted origins, not '*'")
 
-    from app.services.auth import ensure_default_admin
-    await ensure_default_admin()
-    from app.services.db_store import db_store
-    await db_store.cleanup_expired_tokens()
-    logger.info("Default admin user ensured.")
-
-    # Unknown files have no durable owner. Startup must not reclassify an
-    # orphaned private report/plan as a shared default-project resource.
-    with internal_scope():
-        await routes.ensure_default_project()
+    await routes.ensure_default_project()
 
     # Preload RAG embedding model in background (does not block startup)
     import asyncio as _asyncio
     from app.services.ai.rag.store import _preload_embedding_model
-    from app.services.scheduler import runner
     from app.api.mcp_routes import init_mcp_server
     from app.services.ws_manager import ws_manager
     from app.services.execution_lifecycle import execution_lifecycle
@@ -100,8 +66,6 @@ async def lifespan(app: FastAPI):
         cleanup.push_async_callback(stop_monitoring)
         execution_lifecycle.start()
         cleanup.push_async_callback(execution_lifecycle.shutdown)
-        cleanup.push_async_callback(runner.stop)
-        await runner.start()
         cleanup.push_async_callback(ws_manager.stop)
         ws_manager.start()
 
@@ -110,12 +74,6 @@ async def lifespan(app: FastAPI):
             preload_task.cancel()
             await _asyncio.gather(preload_task, return_exceptions=True)
         cleanup.push_async_callback(stop_preload)
-        from app.services.ai.analysis_runtime import analysis_runtime
-        analysis_runtime.start()
-        cleanup.push_async_callback(analysis_runtime.shutdown)
-        from app.services.ai.analysis_receipts import analysis_receipts
-        analysis_receipts.start()
-        cleanup.push_async_callback(analysis_receipts.shutdown)
         await init_mcp_server()
 
         try:
@@ -138,11 +96,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# One boundary also covers static reports and WebSocket handshakes.
-from app.middleware.authentication import AuthenticationMiddleware
-app.add_middleware(AuthenticationMiddleware)
+# Local single-user tool: no authentication. Origin checks still stop other
+# websites in the same browser from driving the local API.
+from app.middleware.local_guard import OriginGuardMiddleware, TrustedHostMiddleware
+app.add_middleware(OriginGuardMiddleware)
 
-# Explicit browser origins; CLI clients use Bearer authentication.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
@@ -151,12 +109,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Rate limiting middleware
-from app.middleware.rate_limiter import RateLimitMiddleware, create_rate_limiter
-app.add_middleware(RateLimitMiddleware, limiter=create_rate_limiter())
-
-# Validate Host before deriving same-origin from it (including MCP handshakes).
-from app.middleware.authentication import TrustedHostMiddleware
+# Validate Host before deriving same-origin from it (DNS rebinding).
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
 
 # WebSocket endpoint for real-time test progress
@@ -182,27 +135,14 @@ async def ws_execution(websocket: WebSocket, execution_id: str):
 # Health check (must be before catch-all)
 @app.get("/health")
 async def health_check():
-    from app.middleware.rate_limiter import create_rate_limiter
-    from app.middleware.concurrency_guard import concurrency_guard
-    return {
-        "status": "healthy",
-        "rate_limiter": create_rate_limiter().get_stats(),
-        "concurrency": concurrency_guard.get_all_stats(),
-    }
+    return {"status": "healthy"}
 
 # API Routes
 app.include_router(routes.router, prefix="/api/v1")
 
-# Auth routes (separate module)
-from app.api.auth_routes import router as auth_router
-app.include_router(auth_router, prefix="/api/v1")
-
 # Baseline routes (separate module)
 from app.api.baseline_routes import router as baseline_router
 app.include_router(baseline_router, prefix="/api/v1")
-
-from app.api.project_access_routes import router as project_access_router
-app.include_router(project_access_router, prefix="/api/v1")
 
 from app.api.analysis_routes import router as analysis_router
 app.include_router(analysis_router, prefix="/api/v1")
@@ -211,17 +151,13 @@ app.include_router(analysis_router, prefix="/api/v1")
 from app.api.data_routes import router as data_router
 app.include_router(data_router, prefix="/api/v1")
 
-# Schedule routes
-from app.api.schedule_routes import router as schedule_router
-app.include_router(schedule_router, prefix="/api/v1")
-
 # MCP Server routes
 from app.api.mcp_routes import router as mcp_router
 app.include_router(mcp_router, prefix="/api/v1")
 
 # Static files for reports
 os.makedirs(settings.REPORTS_DIR, exist_ok=True)
-app.mount("/reports", AuthorizedReportFiles(directory=settings.REPORTS_DIR), name="reports")
+app.mount("/reports", StaticFiles(directory=settings.REPORTS_DIR), name="reports")
 
 # Frontend static files
 frontend_dist = os.path.join(os.path.dirname(settings.BASE_DIR), "jmeter-agent-frontend", "dist")

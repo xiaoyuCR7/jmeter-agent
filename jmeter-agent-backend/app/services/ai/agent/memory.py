@@ -120,18 +120,9 @@ async def _ensure_table():
 
 @contextmanager
 def _session_maintenance(session_id):
-    from app.services.ai.operation_runtime import agent_operations
-    from app.services.coordination import Busy
-    try:
-        operation = agent_operations.acquire_session_maintenance(session_id)
-    except Busy:
-        yield False
-        return
-    try:
-        yield True
-    finally:
-        if operation is not None:
-            operation.close()
+    """Yield False while an agent run owns this session, so it is never deleted mid-run."""
+    from app.services.ai.agent.base import BaseAgent
+    yield session_id not in BaseAgent._active_sessions
 
 
 class ConversationMemory:
@@ -311,8 +302,6 @@ class ConversationMemory:
 
         async with await self._get_lock():
             try:
-                from app.services.ai.operation_runtime import require_session_owner
-                require_session_owner(self.session_id)
                 if not self._dirty:
                     return True
                 await _ensure_table()
@@ -370,8 +359,6 @@ class ConversationMemory:
             return None
 
         try:
-            from app.services.ai.operation_runtime import require_session_owner
-            require_session_owner(session_id)
             await _ensure_table()
             async with await cls._get_lock():
                 async with _db_connection() as db:
@@ -459,13 +446,6 @@ class ConversationMemory:
 
         async with await cls._get_lock():
             try:
-                from app.services.ai.operation_runtime import agent_operations
-                if not agent_operations.enabled:
-                    async with _db_connection() as db:
-                        cursor = await db.execute(
-                            "DELETE FROM conversation_sessions WHERE updated_at < ?", (cutoff,))
-                        await db.commit()
-                        return cursor.rowcount
                 async with _db_connection() as db:
                     cursor = await db.execute(
                         "SELECT session_id FROM conversation_sessions WHERE updated_at < ?",

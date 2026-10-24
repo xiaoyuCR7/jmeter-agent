@@ -26,12 +26,10 @@ from datetime import datetime
 from typing import Optional
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import SimpleNamespace
 
 from fastapi import HTTPException
 
 from app.core.config import settings
-from app.services.project_scope import current_scope, can_document, internal_scope
 
 logger = logging.getLogger(__name__)
 _FALLBACK_LOCKS: dict[str, threading.RLock] = {}
@@ -219,8 +217,7 @@ async def _repair_zero_vectors():
     """Re-embed documents that were stored with placeholder zero vectors."""
     # This private startup-maintenance entrypoint owns only vector repair. The
     # scope propagates into its worker threads and is restored on cancellation.
-    with internal_scope():
-        await _repair_pending_vectors()
+    await _repair_pending_vectors()
 
 
 async def _repair_pending_vectors():
@@ -322,14 +319,13 @@ class LanceRAGStore:
         self._fallback_path = os.path.join(self.db_path, 'fallback.json')
         self._fallback_lock = _FALLBACK_LOCKS.setdefault(os.path.realpath(self.db_path), threading.RLock())
         self._fallback_signature = None
-        self._lease_local = threading.local()
         with self._write_lease():
             self._init_db()
         if os.path.exists(self._fallback_path):
             # Restore this configured store during construction, including
             # import before lifespan. Public JSON migration remains guarded.
             with self._write_lease():
-                with internal_scope(), self._fallback_lock:
+                with self._fallback_lock:
                     documents = self._load_fallback()
                     if self.available:
                         # Import without overwriting independently updated Lance rows.
@@ -341,41 +337,10 @@ class LanceRAGStore:
                         self._docs_cache.update(documents)
                         self._fallback_signature = self._fallback_file_signature()
 
-    @property
-    def _coordinator(self):
-        from app.services.ai.operation_runtime import agent_operations
-        return agent_operations.coordinator
-
     @contextmanager
     def _write_lease(self):
-        coordinator = self._coordinator
-        if coordinator is None:
-            yield
-            return
-        if getattr(self._lease_local, 'depth', 0):
-            self._lease_local.depth += 1
-            try:
-                yield
-            finally:
-                self._lease_local.depth -= 1
-            return
-        from app.services.coordination import Busy, _require_local_disk
-        path = os.path.realpath(self.db_path)
-        _require_local_disk(Path(path))
-        admission = coordinator.claim(uuid.uuid4().hex, [
-            'rag:' + hashlib.sha256(path.encode()).hexdigest()
-        ])
-        if not admission.acquired:
-            raise Busy('Knowledge storage is busy')
-        self._lease_local.depth = 1
-        try:
-            coordinator.mark_side_effects(admission.handle)
-            yield
-        finally:
-            self._lease_local.depth = 0
-            # This synchronous call has returned or raised: no writer thread is
-            # left behind, so the mutex can be released without inferring success.
-            coordinator.release(admission.handle, work_completed=True)
+        # Single process: the instance lock already serializes writers.
+        yield
 
     def _fallback_file_signature(self):
         try:
@@ -383,19 +348,6 @@ class LanceRAGStore:
             return stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns
         except FileNotFoundError:
             return None
-
-    def _refresh_fallback(self):
-        if self.available or self._coordinator is None:
-            return
-        signature = self._fallback_file_signature()
-        if signature == self._fallback_signature:
-            return
-        with self._fallback_lock:
-            signature = self._fallback_file_signature()
-            documents = self._load_fallback() if signature is not None else {}
-            self._docs_cache.clear()
-            self._docs_cache.update(documents)
-            self._fallback_signature = signature
 
     def _load_fallback(self) -> dict[str, RAGDocument]:
         if not os.path.exists(self._fallback_path):
@@ -429,7 +381,6 @@ class LanceRAGStore:
 
     def _write_document(self, doc: RAGDocument):
         vector = _compute_embedding(doc.search_text)
-        self._require_document(doc)
         if self.available:
             row = self._doc_to_row(doc, vector or [0.0] * self.VECTOR_DIM)
             (self._table.merge_insert('id').when_matched_update_all()
@@ -540,7 +491,6 @@ class LanceRAGStore:
 
     def _add_locked(self, doc: RAGDocument) -> str:
         """Add a document. Returns doc ID."""
-        self._require_document(doc)
         if doc.doc_type not in ALLOWED_DOC_TYPES:
             raise ValueError(f"Document type '{doc.doc_type}' not allowed.")
         if not self._validate_content(doc.content):
@@ -550,7 +500,6 @@ class LanceRAGStore:
         else:
             existing = self._get_raw(doc.id)
             if existing is not None:
-                self._require_document(existing)
                 raise ValueError(f'Document {doc.id} already exists; use update')
 
         now = datetime.now().isoformat()
@@ -570,14 +519,12 @@ class LanceRAGStore:
 
     def get(self, doc_id: str) -> Optional[RAGDocument]:
         """Get a document by ID."""
-        current_scope()
         doc = self._get_raw(doc_id)
-        return doc if doc is not None and can_document(doc) else None
+        return doc
 
     def _get_raw(self, doc_id: str) -> Optional[RAGDocument]:
         """Internal identity lookup, never treat a hidden ID as a new document."""
-        self._refresh_fallback()
-        if self._coordinator is None and doc_id in self._docs_cache:
+        if doc_id in self._docs_cache:
             return copy.deepcopy(self._docs_cache[doc_id])
 
         if self.available:
@@ -599,11 +546,9 @@ class LanceRAGStore:
 
     def _update_locked(self, doc_id: str, **updates) -> Optional[RAGDocument]:
         """Update a document. Returns updated doc or None."""
-        current_scope()
         doc = self._get_raw(doc_id)
         if not doc:
             return None
-        self._require_document(doc)
         if any(key in updates and updates[key] != getattr(doc, key)
                for key in ('source_execution_id', 'source_plan_id', 'context_scope')):
             raise ValueError('Document source identity cannot be changed')
@@ -623,10 +568,6 @@ class LanceRAGStore:
 
     def _delete_locked(self, doc_id: str) -> bool:
         """Delete a document."""
-        current_scope()
-        existing = self._get_raw(doc_id)
-        if existing is not None:
-            self._require_document(existing)
         if self.available:
             self._table.delete(self._safe_where("id", doc_id))
         else:
@@ -637,45 +578,15 @@ class LanceRAGStore:
 
     # ── Search ────────────────────────────────────────────
 
-    @staticmethod
-    def _require_document(doc):
-        if not can_document(doc):
-            raise HTTPException(404, 'Knowledge document not found')
-        if not can_document(doc, write=True):
-            raise HTTPException(403, 'Project write permission required')
-
     def _visible(self, documents):
-        self._refresh_fallback()
-        current_scope()
-        return [copy.deepcopy(doc) for doc in documents if can_document(doc)]
+        return [copy.deepcopy(doc) for doc in documents]
 
-    def _where(self, condition=None):
-        """Intersect all storage queries with trusted source ownership before limit."""
-        scope = current_scope()
-        if scope is None:
-            return condition or '1 = 1'
-        empty_execution = "COALESCE(source_execution_id, '') = ''"
-        empty_plan = "COALESCE(source_plan_id, '') = ''"
-        clauses = []
-        for project in scope.authorization.project_modes:
-            if not scope.authorization.allows(project, 'read'):
-                continue
-            executions = [self._safe_where('source_execution_id', identity)
-                          for identity, record in scope.executions.items() if record['project_id'] == project]
-            plans = [self._safe_where('source_plan_id', identity)
-                     for identity, record in scope.plans.items() if record['project_id'] == project]
-            if executions:
-                clauses.append(f"(({' OR '.join(executions)}) AND ({' OR '.join([empty_plan, *plans])}))")
-            if plans:
-                clauses.append(f"(({empty_execution}) AND ({' OR '.join(plans)}))")
-        if can_document(SimpleNamespace(source_execution_id=None, source_plan_id=None)):
-            clauses.append(f'({empty_execution} AND {empty_plan})')
-        authorization = '(' + ' OR '.join(clauses) + ')' if clauses else '1 = 0'
-        return f'({condition}) AND ({authorization})' if condition else authorization
+    @staticmethod
+    def _where(condition=None):
+        return condition or '1 = 1'
 
     def search_by_keywords(self, keywords: list[str], limit: int = 20) -> list[RAGDocument]:
         """Full-text keyword search using LanceDB Tantivy FTS."""
-        current_scope()
         if not keywords:
             return []
 
@@ -695,7 +606,6 @@ class LanceRAGStore:
 
     def search_by_module(self, module: str, limit: int = 20) -> list[RAGDocument]:
         """Find all documents for a module."""
-        current_scope()
         if self.available:
             try:
                 return self._latest_rows(limit, where=self._safe_where("module", module))
@@ -708,7 +618,6 @@ class LanceRAGStore:
 
     def search_by_type(self, doc_type: str, limit: int = 20) -> list[RAGDocument]:
         """Find all documents of a given type."""
-        current_scope()
         if self.available:
             try:
                 return self._latest_rows(limit, where=self._safe_where("doc_type", doc_type))
@@ -738,7 +647,6 @@ class LanceRAGStore:
             query_text: Natural language query for vector similarity search.
             limit: Max results.
         """
-        current_scope()
         keywords = keywords or []
         filters = [self._safe_where(field, value) for field, value in (
             ("module", module), ("doc_type", doc_type), ("version", version)
@@ -752,7 +660,7 @@ class LanceRAGStore:
                 vector = _compute_embedding(query_text)
                 if vector:
                     q = self._table.search(vector)
-                    if filters or current_scope() is not None:
+                    if filters or False:
                         q = q.where(self._where(" AND ".join(filters)))
                     results = q.limit(limit).to_list()
                     docs = [self._row_to_doc(r) for r in results]
@@ -795,11 +703,9 @@ class LanceRAGStore:
 
     def get_module_versions(self, module: str) -> list[str]:
         """Get all known versions for a module."""
-        current_scope()
         if self.available:
             rows = self._table.search().select(['version']).where(
                 self._where(self._safe_where('module', module))).limit(None).to_list()
-            current_scope()
             return sorted({row['version'] for row in rows if row.get('version')}, reverse=True)
         return sorted({d.version for d in self._visible(self._docs_cache.values()) if d.module == module and d.version},
                       reverse=True)
@@ -811,7 +717,6 @@ class LanceRAGStore:
 
     def list_all(self, limit: int = 50, offset: int = 0) -> list[RAGDocument]:
         """List all documents with pagination. Returns docs sorted by created_at desc."""
-        current_scope()
         if self.available:
             try:
                 return self._latest_rows(limit, offset)
@@ -834,11 +739,9 @@ class LanceRAGStore:
         return self._visible(documents[row['id']] for row in selected if row['id'] in documents)
 
     def count(self) -> int:
-        current_scope()
         if self.available:
             try:
                 result = self._table.count_rows(self._where())
-                current_scope()
                 return result
             except Exception:
                 pass
@@ -846,12 +749,10 @@ class LanceRAGStore:
 
     def get_stats(self) -> dict:
         """Get store statistics."""
-        current_scope()
         by_type = {}
         by_module = {}
         rows = (self._table.search().select(['doc_type', 'module']).where(self._where()).limit(None).to_list() if self.available
                 else [{'doc_type': doc.doc_type, 'module': doc.module} for doc in self._visible(self._docs_cache.values())])
-        current_scope()
         for row in rows:
             by_type[row['doc_type']] = by_type.get(row['doc_type'], 0) + 1
             by_module[row['module']] = by_module.get(row['module'], 0) + 1
@@ -907,7 +808,6 @@ class LanceRAGStore:
 
     def _fallback_keyword_search(self, keywords: list[str], limit: int) -> list[RAGDocument]:
         """Substring search fallback when LanceDB unavailable."""
-        current_scope()
         if self.available and any(keywords):
             try:
                 rows = self._table.search().where(self._where(self._keyword_where(keywords))).limit(limit).to_list()
@@ -927,8 +827,6 @@ class LanceRAGStore:
 
     def migrate_from_json(self, json_path: str) -> int:
         """Import documents from old JSON RAG store. Returns count of imported docs."""
-        if current_scope() is not None:
-            raise HTTPException(403, 'Knowledge migration requires internal maintenance scope')
         if not os.path.exists(json_path):
             logger.info(f"No JSON RAG store to migrate: {json_path}")
             return 0

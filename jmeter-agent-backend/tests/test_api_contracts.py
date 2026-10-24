@@ -108,7 +108,6 @@ async def test_baseline_accepts_metrics_in_json_and_identity_in_query(monkeypatc
     from app.api import baseline_routes
     app = FastAPI()
     app.include_router(baseline_routes.router)
-    app.dependency_overrides[baseline_routes.require_auth] = lambda: None
     create = AsyncMock(side_effect=lambda data: data)
     monkeypatch.setattr(baseline_routes.db_store, 'create_baseline', create)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
@@ -119,70 +118,3 @@ async def test_baseline_accepts_metrics_in_json_and_identity_in_query(monkeypatc
     assert response.json()['metrics_snapshot'] == {'throughput': 5}
 
 
-@pytest.mark.asyncio
-async def test_analysis_routes_registered_and_cost_returns_real_contract():
-    from app.main import app
-    paths = {route.path for route in app.routes}
-    for name in ('anomalies', 'correlate', 'estimate-cost', 'drift', 'compare-versions'):
-        assert '/api/v1/analysis/' + name in paths
-
-
-@pytest.mark.asyncio
-async def test_analysis_missing_execution_and_drift_are_not_fake_success(monkeypatch):
-    from fastapi import FastAPI
-    from app.api import analysis_routes
-    app = FastAPI()
-    app.include_router(analysis_routes.router)
-    monkeypatch.setattr(analysis_routes.store, '_executions', {})
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
-        missing = await client.post('/analysis/anomalies', params={'execution_id': 'missing'})
-        drift = await client.post('/analysis/drift', params={'project_id': 'empty'})
-    assert missing.status_code == 404
-    assert drift.status_code == 200 and drift.json()['health'] == 'unknown'
-
-
-@pytest.mark.asyncio
-async def test_drift_history_is_project_scoped(monkeypatch):
-    from app.api import analysis_routes
-    from app.models.schemas import DetailedTestSummary
-    summary = DetailedTestSummary(total_requests=10, success_count=10, error_count=0, error_rate=0,
-        avg_response_time=100, min_response_time=1, max_response_time=200, throughput=1,
-        p50_response_time=100, p90_response_time=100, p95_response_time=100, p99_response_time=100,
-        received_bytes_per_sec=0, sent_bytes_per_sec=0)
-    executions = {p: SimpleNamespace(id=p, project_id=p, status='completed', summary=summary,
-        test_plan_id=p, start_time=datetime.now()) for p in ('allowed', 'unrelated')}
-    monkeypatch.setattr(analysis_routes.store, '_executions', executions)
-    result = await analysis_routes.analyze_drift(project_id='allowed', days=30, execution_id=None)
-    assert result['data_points'] == 1 and result['health'] == 'unknown'
-
-
-@pytest.mark.asyncio
-async def test_drift_http_and_tool_agree_on_mixed_timezones_and_cutoff(monkeypatch):
-    from datetime import timedelta, timezone
-    from fastapi import FastAPI
-    from app.api import analysis_routes
-    from app.services.ai.agent.tools.resource import detect_performance_drift
-
-    now = datetime.now(timezone.utc)
-    east = timezone(timedelta(hours=8))
-    west = timezone(timedelta(hours=-5))
-    dates = [(now - timedelta(days=3)).astimezone().replace(tzinfo=None),
-             (now - timedelta(days=2)).astimezone(east),
-             (now - timedelta(days=1)).astimezone(west),
-             (now - timedelta(days=30, hours=2)).astimezone(east),
-             (now - timedelta(days=30, hours=2)).astimezone().replace(tzinfo=None)]
-    executions = {str(i): SimpleNamespace(
-        id=str(i), project_id='allowed', test_plan_id='plan', status='completed', start_time=date,
-        summary=SimpleNamespace(total_requests=10, p99_response_time=100 * (i + 1),
-            avg_response_time=100, error_rate=0, throughput=10)) for i, date in enumerate(dates)}
-    monkeypatch.setattr(analysis_routes.store, '_executions', executions)
-    app = FastAPI()
-    app.include_router(analysis_routes.router)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
-        response = await client.post('/analysis/drift', params={'project_id': 'allowed', 'days': 30})
-    assert response.status_code == 200
-    assert response.json() == await detect_performance_drift(project_id='allowed', days=30)
-    assert response.json()['data_points'] == 3
-    assert response.json()['slope_per_day']['p99_response_time'] == pytest.approx(100)
-    assert response.json()['health'] == 'degrading'
-    assert [execution.start_time for execution in executions.values()] == dates

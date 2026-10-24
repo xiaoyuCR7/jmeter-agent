@@ -394,15 +394,11 @@ class AgentRunRequest(BaseModel):
     session_id: Optional[str] = Field(None, description="会话 ID，用于多轮记忆持久化")
     execution_id: Optional[str] = Field(None, min_length=1, max_length=50,
         description="仅 analysis 可用：分析已登记执行的 JTL；省略时保留通用 Agent 行为")
-    request_id: Optional[str] = Field(None, min_length=1, max_length=64, pattern=r'^[A-Za-z0-9_-]+$',
-        description="登记分析的持久回执标识；相同标识不重新执行，重新分析请使用新标识")
 
     @model_validator(mode='after')
     def execution_requires_analysis(self):
         if self.execution_id is not None and self.agent_type != 'analysis':
             raise ValueError('execution_id is only supported by the analysis agent')
-        if self.request_id is not None and (self.agent_type != 'analysis' or self.execution_id is None):
-            raise ValueError('request_id requires registered analysis with execution_id')
         return self
 
 
